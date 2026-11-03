@@ -1,0 +1,9 @@
+{{template "header" .}}
+<h1>ポート設定</h1>
+<p class="muted">キャプチャ監視はリザルト画面の列（コントローラーポート）でプレイヤーを特定します。誰がどのポートを持っているかをここで宣言してください。Slack では <code>/smash ports P1=名前 P2=名前</code> でも設定できます。</p>
+<form method="post" action="/ports" class="grid">
+<datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
+{{$bp := .ByPort}}{{range seq 4}}<label><span class="port port{{.}}">P{{.}}</span> <input name="port{{.}}" list="players" value="{{index $bp .}}" placeholder="空欄で未使用" autocomplete="off"></label>{{end}}
+<div><button type="submit">保存</button></div>
+</form>
+{{template "footer" .}}

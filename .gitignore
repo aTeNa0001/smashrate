@@ -1,0 +1,7 @@
+/smashrate.toml
+/data/
+/smashrate
+/smashrate.exe
+*.db
+*.db-wal
+*.db-shm

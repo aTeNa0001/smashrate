@@ -1,0 +1,24 @@
+{{template "header" .}}
+<h1>ランキング</h1>
+{{if not .Leaderboard}}<p class="muted">まだ対戦が記録されていません。<a href="/record">手動記録</a>から始めるか、キャプチャ監視を有効にしてください。</p>{{end}}
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>プレイヤー</th><th class="n">レート</th><th class="n">試合</th><th class="n">勝</th><th class="n">勝率</th><th class="n">μ</th><th class="n">σ</th></tr>
+{{range $i, $r := .Leaderboard}}<tr>
+<td class="n">{{inc $i}}</td><td><a href="/players/{{$r.Player.Name}}">{{$r.Player.Name}}</a></td>
+<td class="n"><b>{{$r.Display}}</b></td><td class="n">{{$r.Games}}</td><td class="n">{{$r.Wins}}</td><td class="n">{{pct $r.WinRate}}</td>
+<td class="n muted">{{f1 $r.Rating.Mu}}</td><td class="n muted">{{f1 $r.Rating.Sigma}}</td>
+</tr>{{end}}
+</table></div>
+
+<h2>最近の対戦</h2>
+<div class="wrap"><table>
+<tr><th>日時</th><th>形式</th><th>参加者</th></tr>
+{{range .Recent}}<tr id="m{{.ID}}"><td>{{date .PlayedAt}}</td><td>{{modeName .Mode}}</td><td>{{template "entries" .Entries}}</td></tr>{{end}}
+</table></div>
+
+{{if .Usage}}<h2>キャラクター使用状況</h2>
+<div class="wrap"><table>
+<tr><th>キャラ</th><th class="n">使用回数</th><th class="n">勝利</th><th class="n">勝率</th></tr>
+{{range .Usage}}<tr><td>{{.Name}}</td><td class="n">{{.Games}}</td><td class="n">{{.Wins}}</td><td class="n">{{if .Games}}{{pct (div .Wins .Games)}}{{end}}</td></tr>{{end}}
+</table></div>{{end}}
+{{template "footer" .}}

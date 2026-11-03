@@ -1,0 +1,57 @@
+{{define "header"}}<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smash Rating</title>
+<style>
+:root { --bg:#f7f6f2; --surface:#fff; --fg:#16161a; --fg2:#52514e; --muted:#898781; --line:#e1e0d9; --accent:#d6322e; --accent-soft:#fbe6e4; --ok:#006300; --p1:#e8413c; --p2:#2a78d6; --p3:#eda100; --p4:#1baf7a; }
+@media (prefers-color-scheme: dark) { :root { --bg:#111113; --surface:#1a1a19; --fg:#f0efec; --fg2:#c3c2b7; --muted:#898781; --line:#2c2c2a; --accent:#ef6a66; --accent-soft:#3a1d1c; --ok:#4cc04c; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font-family:"Hiragino Sans","Yu Gothic UI","Segoe UI",system-ui,sans-serif; font-size:15px; line-height:1.6; }
+nav { display:flex; gap:4px 18px; flex-wrap:wrap; align-items:center; padding:10px 16px; border-bottom:2px solid var(--fg); background:var(--surface); }
+nav .brand { font-weight:900; letter-spacing:.04em; margin-right:8px; color:var(--accent); text-decoration:none; }
+nav a { color:var(--fg2); text-decoration:none; font-weight:600; }
+nav a.on, nav a:hover { color:var(--fg); }
+main { max-width:960px; margin:0 auto; padding:20px 16px 60px; }
+h1 { font-size:24px; margin:8px 0 14px; }
+h2 { font-size:17px; margin:28px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--line); }
+table { border-collapse:collapse; width:100%; background:var(--surface); font-variant-numeric:tabular-nums; }
+th, td { padding:7px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+th { font-size:12px; color:var(--fg2); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
+td.n, th.n { text-align:right; }
+.wrap { overflow-x:auto; border:1px solid var(--line); }
+a { color:var(--accent); }
+.tile { display:inline-flex; flex-direction:column; min-width:120px; padding:10px 14px; background:var(--surface); border:1px solid var(--line); margin:0 8px 8px 0; }
+.tile b { font-size:26px; line-height:1.1; }
+.tile span { font-size:12px; color:var(--muted); }
+.up { color:var(--ok); } .down { color:var(--accent); }
+.win { font-weight:700; }
+.port { display:inline-block; width:1.6em; text-align:center; color:#fff; font-size:12px; font-weight:700; border-radius:3px; margin-right:4px; }
+.port1{background:var(--p1)} .port2{background:var(--p2)} .port3{background:var(--p3)} .port4{background:var(--p4)}
+form.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--fg2); }
+input, select, textarea { font:inherit; padding:6px 8px; border:1px solid var(--line); background:var(--surface); color:var(--fg); }
+button { font:600 14px inherit; background:var(--accent); color:#fff; border:0; padding:9px 18px; cursor:pointer; }
+button.ghost { background:transparent; color:var(--fg2); border:1px solid var(--line); padding:4px 10px; font-size:12px; }
+.err { background:var(--accent-soft); border-left:4px solid var(--accent); padding:8px 12px; margin:10px 0; }
+.muted { color:var(--muted); font-size:13px; }
+.row { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+.team { background:var(--surface); border:1px solid var(--line); padding:10px 14px; min-width:160px; }
+.proposal { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 18px; }
+canvas { width:100%; height:auto; background:var(--surface); border:1px solid var(--line); }
+.checks { display:flex; flex-wrap:wrap; gap:6px 14px; }
+.checks label { flex-direction:row; align-items:center; font-size:14px; color:var(--fg); }
+</style>
+</head>
+<body>
+<nav>
+  <a class="brand" href="/">SMASH RATING</a>
+  <a href="/" {{if eq .Page "index"}}class="on"{{end}}>ランキング</a>
+  <a href="/matches" {{if eq .Page "matches"}}class="on"{{end}}>対戦履歴</a>
+  <a href="/record" {{if eq .Page "record"}}class="on"{{end}}>手動記録</a>
+  <a href="/balance" {{if eq .Page "balance"}}class="on"{{end}}>チーム分け</a>
+  <a href="/ports" {{if eq .Page "ports"}}class="on"{{end}}>ポート設定</a>
+</nav>
+<main>
+{{end}}

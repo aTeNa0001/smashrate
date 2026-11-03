@@ -1,0 +1,50 @@
+# Copy to smashrate.toml and edit. Every section is optional; defaults run the web UI only.
+
+[server]
+addr = ":8080"
+database = "data/smashrate.db"
+data_dir = "data"
+# Used in Slack messages to link to the web UI (LAN address of the mini PC).
+base_url = "http://192.168.1.50:8080"
+
+[slack]
+enabled = false
+# Socket Mode: no public URL needed. Create an app at https://api.slack.com/apps,
+# enable Socket Mode (app-level token with connections:write), add a slash command
+# named /smash, and give the bot scopes commands, chat:write.
+bot_token = "xoxb-..."
+app_token = "xapp-..."
+# Channel id for automatic-record notifications (optional).
+channel = ""
+command = "/smash"
+
+[vision]
+enabled = false
+ffmpeg = "ffmpeg"
+# Windows: dshow + "video=<device name>" (find it with `smashrate vision devices`)
+# Linux:   v4l2  + "/dev/video0"
+# macOS:   avfoundation + "0"
+input_format = "dshow"
+input = "video=USB Video"
+# Extra input options, e.g. forcing the capture resolution:
+# input_args = ["-video_size", "1920x1080", "-framerate", "30"]
+width = 640
+height = 360
+fps = 2
+stable_frames = 3
+cooldown_seconds = 90
+# Hamming distance (0-64) allowed between a region hash and a learned template.
+screen_threshold = 10
+char_threshold = 12
+rank_threshold = 10
+
+# Layouts are fractions of the frame (0..1). The defaults are a starting point;
+# tune them with `smashrate vision regions -image shot.png -players 2` until the
+# crops in data/regions/ show exactly the fighter portrait and the placement badge.
+# [[vision.layouts]]
+# players = 2
+# screen = { x = 0.0, y = 0.86, w = 1.0, h = 0.14 }
+# slots = [
+#   { port = 1, char = { x = 0.075, y = 0.30, w = 0.35, h = 0.35 }, rank = { x = 0.05, y = 0.08, w = 0.175, h = 0.14 } },
+#   { port = 2, char = { x = 0.575, y = 0.30, w = 0.35, h = 0.35 }, rank = { x = 0.55, y = 0.08, w = 0.175, h = 0.14 } },
+# ]

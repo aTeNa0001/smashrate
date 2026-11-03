@@ -1,0 +1,9 @@
+{{template "header" .}}
+<h1>対戦履歴</h1>
+<div class="wrap"><table>
+<tr><th>#</th><th>日時</th><th>形式</th><th>参加者</th><th>記録元</th><th></th></tr>
+{{range .Matches}}<tr id="m{{.ID}}"><td class="muted">{{.ID}}</td><td>{{date .PlayedAt}}</td><td>{{modeName .Mode}}</td><td>{{template "entries" .Entries}}{{if .Note}}<span class="muted">{{.Note}}</span>{{end}}</td><td class="muted">{{.Source}}</td>
+<td><form method="post" action="/matches/{{.ID}}/delete" onsubmit="return confirm('この対戦を削除して全員のレートを再計算します。よろしいですか？')"><button class="ghost" type="submit">削除</button></form></td></tr>{{end}}
+</table></div>
+<p class="muted">{{if gt .Page 0}}<a href="/matches?page={{.Prev}}">← 新しい</a> {{end}}{{if eq (len .Matches) 50}}<a href="/matches?page={{.Next}}">古い →</a>{{end}}</p>
+{{template "footer" .}}

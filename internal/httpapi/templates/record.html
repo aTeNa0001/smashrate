@@ -1,0 +1,23 @@
+{{template "header" .}}
+<h1>手動記録</h1>
+<p class="muted">1on1 と乱闘は全員を別チームにして順位を入力。チーム戦は同じチーム番号に同じ順位を入力します。</p>
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+<form method="post" action="/record">
+<datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
+<datalist id="chars">{{range .Characters}}<option value="{{.NameJA}}">{{.NameEN}}</option>{{end}}</datalist>
+<div class="wrap"><table>
+<tr><th>#</th><th>プレイヤー</th><th>キャラ</th><th>チーム</th><th>順位</th></tr>
+{{range seq 8}}<tr>
+<td class="muted">{{.}}</td>
+<td><input name="p{{.}}_name" list="players" placeholder="名前" autocomplete="off"></td>
+<td><input name="p{{.}}_char" list="chars" placeholder="任意" autocomplete="off"></td>
+<td><input name="p{{.}}_team" type="number" min="1" max="8" value="{{.}}" style="width:5em"></td>
+<td><input name="p{{.}}_rank" type="number" min="1" max="8" value="{{.}}" style="width:5em"></td>
+</tr>{{end}}
+</table></div>
+<div class="row" style="margin-top:12px">
+  <label>メモ <input name="note" style="min-width:260px"></label>
+  <button type="submit">記録する</button>
+</div>
+</form>
+{{template "footer" .}}

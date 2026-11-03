@@ -1,0 +1,57 @@
+{{template "header" .}}
+{{$s := .S}}
+<h1>{{$s.Player.Name}}</h1>
+<div>
+  <div class="tile"><b>{{$s.Overall.Display}}</b><span>総合レート{{if $s.Rank}}（{{$s.Rank}}位）{{end}}</span></div>
+  <div class="tile"><b>{{pct $s.Overall.WinRate}}</b><span>勝率 {{$s.Overall.Wins}}/{{$s.Overall.Games}}</span></div>
+  <div class="tile"><b>{{if gt $s.CurrentStreak 0}}{{$s.CurrentStreak}}連勝{{else if lt $s.CurrentStreak 0}}{{mul $s.CurrentStreak -1}}連敗{{else}}—{{end}}</b><span>現在 / 最長 {{$s.BestStreak}}連勝</span></div>
+  <div class="tile"><b>{{f1 $s.AvgPlacement}}</b><span>平均順位</span></div>
+</div>
+
+<h2>レート推移</h2>
+<canvas id="hist" width="900" height="260" aria-label="レート推移"></canvas>
+<script>
+(function(){
+  const pts = {{json $s.History}};
+  const cv = document.getElementById('hist'), ctx = cv.getContext('2d');
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const W = cv.width, H = cv.height, pad = {l:56, r:16, t:16, b:28};
+  const ys = pts.map(p => p.Display); let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (hi - lo < 100) { const m = (hi+lo)/2; lo = m-50; hi = m+50; }
+  lo = Math.floor(lo/50)*50; hi = Math.ceil(hi/50)*50;
+  const x = i => pad.l + (pts.length>1 ? i/(pts.length-1) : 0) * (W-pad.l-pad.r);
+  const y = v => pad.t + (1-(v-lo)/(hi-lo)) * (H-pad.t-pad.b);
+  ctx.fillStyle = css('--surface'); ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = css('--line'); ctx.fillStyle = css('--muted'); ctx.font = '12px system-ui'; ctx.textAlign='right';
+  for (let v = lo; v <= hi; v += 50) { ctx.beginPath(); ctx.moveTo(pad.l, y(v)); ctx.lineTo(W-pad.r, y(v)); ctx.stroke(); ctx.fillText(v, pad.l-8, y(v)+4); }
+  ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((p,i) => i ? ctx.lineTo(x(i), y(p.Display)) : ctx.moveTo(x(i), y(p.Display))); ctx.stroke();
+  const last = pts[pts.length-1]; ctx.fillStyle = css('--accent'); ctx.beginPath(); ctx.arc(x(pts.length-1), y(last.Display), 4, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = css('--muted'); ctx.textAlign='center'; ctx.fillText('試合数 →', (pad.l+W-pad.r)/2, H-8);
+})();
+</script>
+
+{{if $s.Modes}}<h2>形式別</h2>
+<div class="wrap"><table>
+<tr><th>形式</th><th class="n">サブレート</th><th class="n">試合</th><th class="n">勝</th><th class="n">勝率</th></tr>
+{{range $s.Modes}}<tr><td>{{modeName .Mode}}</td><td class="n"><b>{{.Display}}</b></td><td class="n">{{.Games}}</td><td class="n">{{.Wins}}</td><td class="n">{{pct .WinRate}}</td></tr>{{end}}
+</table></div>{{end}}
+
+{{if $s.Characters}}<h2>使用キャラ</h2>
+<div class="wrap"><table>
+<tr><th>キャラ</th><th class="n">キャラ別レート</th><th class="n">試合</th><th class="n">勝</th><th class="n">勝率</th></tr>
+{{range $s.Characters}}<tr><td>{{.Name}}</td><td class="n"><b>{{.Display}}</b></td><td class="n">{{.Games}}</td><td class="n">{{.Wins}}</td><td class="n">{{pct .WinRate}}</td></tr>{{end}}
+</table></div>{{end}}
+
+{{if $s.HeadToHead}}<h2>対戦成績（1on1）</h2>
+<div class="wrap"><table>
+<tr><th>相手</th><th class="n">試合</th><th class="n">勝</th><th class="n">勝率</th></tr>
+{{range $s.HeadToHead}}<tr><td><a href="/players/{{.Opponent.Name}}">{{.Opponent.Name}}</a></td><td class="n">{{.Games}}</td><td class="n">{{.Wins}}</td><td class="n">{{pct .WinRate}}</td></tr>{{end}}
+</table></div>{{end}}
+
+<h2>最近の対戦</h2>
+<div class="wrap"><table>
+<tr><th>日時</th><th>形式</th><th>参加者</th></tr>
+{{range $s.Recent}}<tr><td>{{date .PlayedAt}}</td><td>{{modeName .Mode}}</td><td>{{template "entries" .Entries}}</td></tr>{{end}}
+</table></div>
+{{template "footer" .}}
