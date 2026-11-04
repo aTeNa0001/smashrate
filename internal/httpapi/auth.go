@@ -87,6 +87,10 @@ func (s *Server) requireLogin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	write := r.Method != http.MethodGet && r.Method != http.MethodHead
+	// Team balancing is a query that happens to use POST (it carries a member list).
+	if r.URL.Path == "/balance" || r.URL.Path == "/api/balance" {
+		write = false
+	}
 	if !write && !s.auth.cfg.ReadRequiresLogin {
 		return false
 	}

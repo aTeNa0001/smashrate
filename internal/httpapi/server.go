@@ -17,6 +17,7 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/characters"
 	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
+	"github.com/aTeNa0001/smashrate/internal/rating"
 )
 
 //go:embed templates/*.html
@@ -339,11 +340,13 @@ func (s *Server) Balance(names []string, k int, uneven bool) ([]balance.Proposal
 			continue
 		}
 		seen[strings.ToLower(n)] = true
-		p, err := s.core.GetOrCreatePlayer(n)
-		if err != nil {
-			return nil, err
+		// Unknown names take the prior rating; balancing never creates players.
+		m := balance.Member{Name: n, Rating: rating.NewRating()}
+		if p, err := s.core.PlayerByName(n); err == nil {
+			m.Name = p.Name
+			m.Rating = s.core.PlayerRating(p.ID, core.ScopeOverall).Rating
 		}
-		members = append(members, balance.Member{Name: p.Name, Rating: s.core.PlayerRating(p.ID, core.ScopeOverall).Rating})
+		members = append(members, m)
 	}
 	return balance.Propose(members, k, balance.Options{TopN: 3, AllowUneven: uneven})
 }

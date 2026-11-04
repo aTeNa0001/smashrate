@@ -5,7 +5,7 @@
 <form method="post" action="/balance">
 <h2>メンバー</h2>
 <div class="checks">
-{{$sel := .Selected}}{{range .Players}}<label><input type="checkbox" name="members" value="{{.Name}}" {{range $sel}}{{if eq . $.Name}}checked{{end}}{{end}}> {{.Name}}</label>{{end}}
+{{$sel := .Selected}}{{range $p := .Players}}<label><input type="checkbox" name="members" value="{{$p.Name}}" {{range $sel}}{{if eq . $p.Name}}checked{{end}}{{end}}> {{$p.Name}}</label>{{end}}
 </div>
 <div class="row" style="margin-top:12px">
   <label>未登録の名前（カンマ区切り） <input name="extra" style="min-width:260px"></label>

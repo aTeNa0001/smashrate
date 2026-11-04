@@ -58,6 +58,16 @@ func TestAuthGatesWrites(t *testing.T) {
 		t.Fatalf("form write without login: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 
+	// balancing is a query: allowed without login even though it is a POST
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("POST", "/api/balance", strings.NewReader(`{"members":["A","B","C","D"],"teams":2}`)))
+	if rec.Code != 200 {
+		t.Fatalf("balance without login: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := c.PlayerByName("A"); err == nil {
+		t.Fatal("balancing must not create players")
+	}
+
 	// bearer token works
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest("POST", "/api/matches", body())
