@@ -17,6 +17,7 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/characters"
 	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
+	"github.com/aTeNa0001/smashrate/internal/ocr"
 )
 
 // pendingCrop is an unrecognised region waiting for a human label.
@@ -34,6 +35,7 @@ type Watcher struct {
 	det     *Detector
 	dataDir string
 	notify  func(string)
+	ocr     ocr.Engine // nil = disabled
 
 	mu       sync.Mutex
 	pending  map[string]pendingCrop
@@ -52,7 +54,56 @@ func NewWatcher(cfg config.VisionConfig, c *core.Core, dataDir string, notify fu
 	if notify == nil {
 		notify = func(s string) { log.Println("vision:", s) }
 	}
-	return &Watcher{cfg: cfg, core: c, det: det, dataDir: dataDir, notify: notify, pending: map[string]pendingCrop{}}, nil
+	eng, err := ocr.New(cfg.OCR)
+	if err != nil {
+		return nil, err
+	}
+	if eng != nil {
+		log.Printf("vision: name-tag OCR engine %q", eng.Name())
+	} else {
+		log.Printf("vision: name-tag OCR disabled; unknown tags must be labelled by hand")
+	}
+	return &Watcher{cfg: cfg, core: c, det: det, dataDir: dataDir, notify: notify, ocr: eng, pending: map[string]pendingCrop{}}, nil
+}
+
+// SetOCR replaces the OCR engine (tests, or a custom engine).
+func (w *Watcher) SetOCR(e ocr.Engine) { w.ocr = e }
+
+// readTag OCRs a name-tag crop and resolves it to a player name, creating
+// the player when the text matches nobody. The tag's hash is stored so the
+// next appearance is matched without OCR. Returns "" when nothing was read.
+func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created bool) {
+	if w.ocr == nil {
+		return "", false
+	}
+	text, err := w.ocr.Recognize(crop)
+	if err != nil {
+		log.Printf("vision: ocr: %v", err)
+		return "", false
+	}
+	clean := ocr.NormalizeName(text)
+	if clean == "" {
+		return "", false
+	}
+	players, _ := w.core.Players()
+	names := make([]string, 0, len(players))
+	for _, p := range players {
+		names = append(names, p.Name)
+	}
+	if m := ocr.MatchName(clean, names); m != "" {
+		name = m
+	} else {
+		p, err := w.core.GetOrCreatePlayer(clean)
+		if err != nil {
+			log.Printf("vision: create player %q: %v", clean, err)
+			return "", false
+		}
+		name, created = p.Name, true
+	}
+	if err := w.core.AddTemplate(KindName, name, hash); err == nil {
+		_ = w.det.Reload(w.core)
+	}
+	return name, created
 }
 
 // Run consumes frames until ctx ends or the source is exhausted.
@@ -115,9 +166,18 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	in.Source = "vision"
 	var unknown []string
 	var unidentified []int
+	var newcomers []string
 	for i, s := range r.Slots {
-		// The name tag identifies the human.
+		// The name tag identifies the human: learned hash first, OCR for a
+		// tag never seen before, manual labelling as the last resort.
 		name := s.Name
+		if name == "" && i < len(layout.Slots) {
+			crop := Crop(img, Rect(img.Bounds(), layout.Slots[i].Name))
+			var created bool
+			if name, created = w.readTag(crop, s.NameHash); created {
+				newcomers = append(newcomers, name)
+			}
+		}
 		if name == "" {
 			unidentified = append(unidentified, s.Port)
 			if i < len(layout.Slots) {
@@ -139,6 +199,9 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	}
 
 	var msg []string
+	if len(newcomers) > 0 {
+		msg = append(msg, fmt.Sprintf("新しいプレイヤーを登録しました: %s（読み間違いなら `rename <今の名前> <正しい名前>`、既存の人なら `merge <今の名前> <既存の名前>`）", strings.Join(newcomers, ", ")))
+	}
 	if len(unidentified) > 0 {
 		msg = append(msg, fmt.Sprintf("列 %v のプレイヤーを特定できなかったため記録していません。名前タグを `learn <画像ID> <名前>` で教えると次回から自動で判別します。", unidentified))
 	}

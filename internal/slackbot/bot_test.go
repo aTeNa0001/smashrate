@@ -69,6 +69,25 @@ func TestLinkAndMentions(t *testing.T) {
 	}
 }
 
+func TestRenameMerge(t *testing.T) {
+	b, c := newBot(t)
+	b.Handle("record Hanak0 > Taro", "U1")
+	b.Handle("record Hanako > Taro", "U1")
+	if out, _ := b.Handle("rename Hanak0 Hanako", "U1"); !strings.Contains(out, "変更できません") {
+		t.Fatalf("rename onto existing: %q", out)
+	}
+	if out, _ := b.Handle("rename Hanak0 Hana", "U1"); !strings.Contains(out, "変更しました") {
+		t.Fatalf("rename: %q", out)
+	}
+	if out, _ := b.Handle("merge Hana Hanako", "U1"); !strings.Contains(out, "統合") {
+		t.Fatalf("merge: %q", out)
+	}
+	h, _ := c.PlayerByName("Hanako")
+	if r := c.PlayerRating(h.ID, core.ScopeOverall); r.Games != 2 {
+		t.Fatalf("merged games = %d", r.Games)
+	}
+}
+
 func TestBalanceFixDeleteHelp(t *testing.T) {
 	b, c := newBot(t)
 	b.Handle("record 太郎:マリオ > 花子:リンク", "U1")

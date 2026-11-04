@@ -50,6 +50,15 @@ char_threshold = 12
 rank_threshold = 10
 name_threshold = 10
 
+# Name-tag OCR: runs only for a tag never seen before, then the tag is
+# remembered as an image hash. New names create players automatically.
+[vision.ocr]
+engine = "auto"      # auto = Windows built-in OCR on Windows, none elsewhere; or "command"
+language = "ja"
+scale = 3            # enlarge the crop before recognition
+timeout_seconds = 15
+# engine = "command"; command = "tesseract {image} - -l jpn"
+
 # Layouts are fractions of the frame (0..1). The defaults are a starting point;
 # tune them with `smashrate vision regions -image shot.png -players 2` until the
 # crops in data/regions/ show exactly the fighter portrait, the placement badge

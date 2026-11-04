@@ -172,6 +172,88 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 	}
 }
 
+// fakeOCR answers with a fixed text per name-region seed; it records calls.
+type fakeOCR struct {
+	byHash map[uint64]string
+	calls  int
+}
+
+func (f *fakeOCR) Name() string { return "fake" }
+func (f *fakeOCR) Recognize(img image.Image) (string, error) {
+	f.calls++
+	h := DHash(img, img.Bounds())
+	return f.byHash[h], nil
+}
+
+func TestOCRRegistersNewcomersOnce(t *testing.T) {
+	c, err := core.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cfg := config.Default().Vision
+	cfg.StableFrames = 1
+	cfg.CooldownSeconds = 1
+	cfg.OCR.Engine = "none"
+
+	// only the screen/char/rank templates are taught; no name tags at all
+	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
+	if err := Teach(c, cfg, f1, 2, []string{"mario", "link"}, []string{"1", "2"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = c.GetOrCreatePlayer("Hanako") // an existing member, to be fuzzy-matched
+
+	layout, _ := cfg.Layout(2)
+	b := f1.Bounds()
+	tag := func(i int) uint64 { cr := Crop(f1, Rect(b, layout.Slots[i].Name)); return DHash(cr, cr.Bounds()) }
+	fake := &fakeOCR{byHash: map[uint64]string{tag(0): "た ろ う", tag(1): "Hanak0"}}
+
+	var msgs []string
+	w, err := NewWatcher(cfg, c, t.TempDir(), func(s string) { msgs = append(msgs, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SetOCR(fake)
+
+	w.Process(f1)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("expected the match to be recorded via OCR, got %d; msgs=%v", len(ms), msgs)
+	}
+	if ms[0].Entries[0].PlayerName != "たろう" || ms[0].Entries[1].PlayerName != "Hanako" {
+		t.Fatalf("names: %+v", ms[0].Entries)
+	}
+	if _, err := c.PlayerByName("Hanak0"); err == nil {
+		t.Fatal("fuzzy match should have reused Hanako instead of creating Hanak0")
+	}
+	if fake.calls != 2 {
+		t.Fatalf("expected 2 OCR calls, got %d", fake.calls)
+	}
+	if len(msgs) == 0 || !strings.Contains(msgs[0], "新しいプレイヤーを登録しました: たろう") {
+		t.Fatalf("newcomer notice missing: %v", msgs)
+	}
+
+	// same tags again: matched by hash, no OCR
+	w.Process(frame(cfg, 2, []int64{12, 11}, []int64{21, 22}, 42, 41)) // seats swapped, Hanako (now P1) wins
+	ms, _ = c.Matches(10, 0)
+	if len(ms) != 2 || ms[0].Entries[0].PlayerName != "Hanako" || ms[0].Entries[0].Rank != 1 || ms[0].Entries[1].PlayerName != "たろう" {
+		t.Fatalf("second match: %+v", ms[0].Entries)
+	}
+	if fake.calls != 2 {
+		t.Fatalf("hash templates should have avoided OCR, calls=%d", fake.calls)
+	}
+
+	// OCR reads nothing: not recorded, crop stashed for manual labelling
+	f3 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 99)
+	w.Process(f3)
+	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
+		t.Fatal("unreadable tag must block recording")
+	}
+	if p := w.Pending(); len(p) != 1 {
+		t.Fatalf("pending = %v", p)
+	}
+}
+
 func TestNormalizeLabel(t *testing.T) {
 	for in, want := range map[string]string{"1st": "1", "2位": "2", "3": "3", "4th": "4"} {
 		if got, err := NormalizeLabel(KindRank, in); err != nil || got != want {

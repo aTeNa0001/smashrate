@@ -191,6 +191,48 @@ func TestUpdateMatch(t *testing.T) {
 	}
 }
 
+func TestRenameAndMerge(t *testing.T) {
+	c := openTest(t)
+	if _, err := c.RecordMatch(MatchInput{Entries: []EntryInput{e("Hanak0", "", 1, 1), e("Taro", "", 2, 2)}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.RecordMatch(MatchInput{Entries: []EntryInput{e("Hanako", "", 1, 1), e("Taro", "", 2, 2)}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.AddTemplate("name", "Hanak0", 1)
+	if err := c.RenamePlayer("Hanak0", "Hanako"); err == nil {
+		t.Fatal("rename onto an existing player should be refused")
+	}
+	if err := c.RenamePlayer("Hanak0", "Hanako2"); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := c.Templates("name")
+	if ts[0].Label != "Hanako2" {
+		t.Fatalf("template label not renamed: %+v", ts)
+	}
+	if err := c.MergePlayers("Hanako2", "Hanako"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.PlayerByName("Hanako2"); err == nil {
+		t.Fatal("merged player should be gone")
+	}
+	h, _ := c.PlayerByName("Hanako")
+	if r := c.PlayerRating(h.ID, ScopeOverall); r.Games != 2 || r.Wins != 2 {
+		t.Fatalf("merged record: %+v", r)
+	}
+	ts, _ = c.Templates("name")
+	if ts[0].Label != "Hanako" {
+		t.Fatalf("template label not merged: %+v", ts)
+	}
+	// both in one match: refuse
+	if _, err := c.RecordMatch(MatchInput{Entries: []EntryInput{e("Hanako", "", 1, 1), e("Taro", "", 2, 2)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MergePlayers("Taro", "Hanako"); err == nil {
+		t.Fatal("merging opponents should be refused")
+	}
+}
+
 func TestTemplates(t *testing.T) {
 	c := openTest(t)
 	if err := c.AddTemplate("char", "mario", 0xFFFFFFFFFFFFFFFF); err != nil {

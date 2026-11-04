@@ -20,6 +20,7 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
 	"github.com/aTeNa0001/smashrate/internal/httpapi"
+	"github.com/aTeNa0001/smashrate/internal/ocr"
 	"github.com/aTeNa0001/smashrate/internal/parse"
 	"github.com/aTeNa0001/smashrate/internal/slackbot"
 	"github.com/aTeNa0001/smashrate/internal/vision"
@@ -40,6 +41,8 @@ Commands:
                               propose balanced teams (2-4 teams, up to 8 players; "uneven" allows unequal sizes)
   delete <match-id>           delete a match and recompute
   fix <match-id> <name> <char>  correct a character
+  rename <old> <new>          fix a misread player name
+  merge <duplicate> <keep>    merge a duplicate player into another and recompute
   recompute                   rebuild every rating from the match history
   vision devices              list capture devices seen by ffmpeg
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
@@ -47,6 +50,7 @@ Commands:
   vision teach -image f -players N -chars a,b -ranks 1,2 -names Taro,Hanako
                               learn the results screen + its characters/ranks/name tags from a screenshot
   vision test -image f        run the detector on a screenshot and print what it sees
+  vision ocr -image f         run the name-tag OCR engine on an image and print the text
   vision watch                run only the capture watcher (no web server)
 `
 
@@ -93,6 +97,18 @@ func main() {
 		err = deleteCmd(c, args)
 	case "fix":
 		err = fixCmd(c, args)
+	case "rename":
+		if len(args) != 2 {
+			err = errors.New("usage: rename <old> <new>")
+		} else {
+			err = c.RenamePlayer(args[0], args[1])
+		}
+	case "merge":
+		if len(args) != 2 {
+			err = errors.New("usage: merge <duplicate> <keep>")
+		} else {
+			err = c.MergePlayers(args[0], args[1])
+		}
 	case "recompute":
 		err = c.Recompute()
 		if err == nil {
@@ -441,6 +457,27 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		for _, s := range r.Slots {
 			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist)
 		}
+		return nil
+	case "ocr":
+		if *imagePath == "" {
+			return errors.New("-image is required")
+		}
+		eng, err := ocr.New(cfg.Vision.OCR)
+		if err != nil {
+			return err
+		}
+		if eng == nil {
+			return errors.New("ocr is disabled in config (vision.ocr.engine)")
+		}
+		img, err := vision.OpenFiles(*imagePath).Next()
+		if err != nil {
+			return err
+		}
+		text, err := eng.Recognize(img)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("engine: %s\nraw: %q\nname: %q\n", eng.Name(), text, ocr.NormalizeName(text))
 		return nil
 	case "watch":
 		w, err := vision.NewWatcher(cfg.Vision, c, cfg.Server.DataDir, nil)

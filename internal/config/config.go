@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/aTeNa0001/smashrate/internal/ocr"
 )
 
 // Config is the whole configuration file.
@@ -78,6 +80,8 @@ type VisionConfig struct {
 	CharThreshold   int `toml:"char_threshold"`
 	RankThreshold   int `toml:"rank_threshold"`
 	NameThreshold   int `toml:"name_threshold"`
+	// OCR reads the name tag of players whose tag has not been seen before.
+	OCR ocr.Config `toml:"ocr"`
 	// Layouts describe where things are on the results screen, by player count.
 	Layouts []Layout `toml:"layouts"`
 }
@@ -116,6 +120,7 @@ func Default() Config {
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
 			Width: 640, Height: 360, FPS: 2, StableFrames: 3, CooldownSeconds: 90,
 			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 10, NameThreshold: 10,
+			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
 		},
 	}

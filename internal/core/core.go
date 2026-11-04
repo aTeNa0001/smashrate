@@ -136,6 +136,89 @@ func (c *Core) SetSlackID(name, slackID string) error {
 	return err
 }
 
+// RenamePlayer changes a player's display name (for OCR misreads).
+func (c *Core) RenamePlayer(oldName, newName string) error {
+	p, err := c.PlayerByName(oldName)
+	if err != nil {
+		return err
+	}
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return errors.New("new name is empty")
+	}
+	if other, err := c.PlayerByName(newName); err == nil && other.ID != p.ID {
+		return fmt.Errorf("player %q already exists (use merge)", other.Name)
+	}
+	tx, err := c.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE players SET name = ? WHERE id = ?`, newName, p.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE vision_templates SET label = ? WHERE kind = 'name' AND label = ?`, newName, p.Name); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// MergePlayers moves every match and learned name tag of `from` onto `to`,
+// deletes `from` and recomputes ratings. Used when OCR created a duplicate.
+func (c *Core) MergePlayers(from, to string) error {
+	src, err := c.PlayerByName(from)
+	if err != nil {
+		return err
+	}
+	dst, err := c.PlayerByName(to)
+	if err != nil {
+		return err
+	}
+	if src.ID == dst.ID {
+		return errors.New("cannot merge a player into itself")
+	}
+	// a match where both appear cannot be merged automatically
+	var clash int
+	if err := c.db.QueryRow(`SELECT COUNT(*) FROM entries a JOIN entries b ON a.match_id = b.match_id
+		WHERE a.player_id = ? AND b.player_id = ?`, src.ID, dst.ID).Scan(&clash); err != nil {
+		return err
+	}
+	if clash > 0 {
+		return fmt.Errorf("%s and %s played in the same match %d time(s); fix those matches first", src.Name, dst.Name, clash)
+	}
+	tx, err := c.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`UPDATE entries SET player_id = ? WHERE player_id = ?`,
+		`UPDATE rating_history SET player_id = ? WHERE player_id = ?`,
+	} {
+		if _, err := tx.Exec(q, dst.ID, src.ID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`UPDATE vision_templates SET label = ? WHERE kind = 'name' AND label = ?`, dst.Name, src.Name); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM rating_states WHERE player_id = ?`, src.ID); err != nil {
+		return err
+	}
+	if dst.SlackID == "" && src.SlackID != "" {
+		if _, err := tx.Exec(`UPDATE players SET slack_id = ? WHERE id = ?`, src.SlackID, dst.ID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM players WHERE id = ?`, src.ID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return c.Recompute()
+}
+
 // Players lists every player alphabetically.
 func (c *Core) Players() ([]Player, error) {
 	rows, err := c.db.Query(`SELECT id, name, slack_id, created_at FROM players ORDER BY name COLLATE NOCASE`)

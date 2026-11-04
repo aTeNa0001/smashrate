@@ -111,6 +111,10 @@ func (b *Bot) Handle(text, userID string) (string, bool) {
 		return b.del(rest), true
 	case "learn":
 		return b.learn(rest), false
+	case "rename":
+		return b.rename(rest), true
+	case "merge":
+		return b.merge(rest), true
 	case "chars", "characters":
 		return charList(), false
 	}
@@ -131,6 +135,8 @@ func help(cmd string) string {
 		"`" + cmd + " fix <試合ID> <名前> <キャラ>` キャラの誤認識を修正",
 		"`" + cmd + " delete <試合ID>` 対戦を削除して再計算",
 		"`" + cmd + " learn <画像ID> <キャラ|1st..4th|プレイヤー名>` 未知の画像（キャラ・順位・名前タグ）にラベルを付けて学習",
+		"`" + cmd + " rename <今の名前> <正しい名前>` OCR の読み間違いを直す",
+		"`" + cmd + " merge <重複した名前> <本来の名前>` 二重登録を統合して再計算",
 	}, "\n")
 }
 
@@ -417,6 +423,28 @@ func (b *Bot) learn(arg string) string {
 		return "学習できません: " + err.Error()
 	}
 	return "学習しました: " + f[0] + " → " + strings.Join(f[1:], " ")
+}
+
+func (b *Bot) rename(arg string) string {
+	f := strings.Fields(arg)
+	if len(f) != 2 {
+		return "使い方: rename <今の名前> <正しい名前>"
+	}
+	if err := b.core.RenamePlayer(f[0], f[1]); err != nil {
+		return "変更できません: " + err.Error()
+	}
+	return fmt.Sprintf("%s → %s に変更しました。", f[0], f[1])
+}
+
+func (b *Bot) merge(arg string) string {
+	f := strings.Fields(arg)
+	if len(f) != 2 {
+		return "使い方: merge <重複した名前> <本来の名前>"
+	}
+	if err := b.core.MergePlayers(f[0], f[1]); err != nil {
+		return "統合できません: " + err.Error()
+	}
+	return fmt.Sprintf("%s を %s に統合し、レートを再計算しました。", f[0], f[1])
 }
 
 func charList() string {
