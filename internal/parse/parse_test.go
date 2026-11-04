@@ -61,16 +61,3 @@ func TestMatchErrors(t *testing.T) {
 		}
 	}
 }
-
-func TestPorts(t *testing.T) {
-	m, err := Ports("P1=Taro p2:Hanako 3=Jiro")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m[1] != "Taro" || m[2] != "Hanako" || m[3] != "Jiro" {
-		t.Fatalf("%v", m)
-	}
-	if _, err := Ports("Taro"); err == nil {
-		t.Fatal("expected error")
-	}
-}

@@ -63,13 +63,11 @@ func TestTeachDetectAndRecord(t *testing.T) {
 	cfg.StableFrames = 2
 	cfg.CooldownSeconds = 1
 
-	// teach from one 1v1 frame: P1 mario 1st, P2 link 2nd (ports as fallback identity)
-	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22})
-	if err := Teach(c, cfg, f1, 2, []string{"マリオ", "link"}, []string{"1st", "2nd"}, nil); err != nil {
+	// teach from one 1v1 frame: P1 Taro/mario 1st, P2 Hanako/link 2nd
+	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
+	if err := Teach(c, cfg, f1, 2, []string{"マリオ", "link"}, []string{"1st", "2nd"}, []string{"Taro", "Hanako"}); err != nil {
 		t.Fatal(err)
 	}
-	_ = c.SetPort(1, "Taro")
-	_ = c.SetPort(2, "Hanako")
 
 	var msgs []string
 	w, err := NewWatcher(cfg, c, t.TempDir(), func(s string) { msgs = append(msgs, s) })
@@ -90,8 +88,8 @@ func TestTeachDetectAndRecord(t *testing.T) {
 
 	// a frame with a known rank but unknown character: match recorded without
 	// the character, crop stashed, learnable afterwards.
-	w.Process(frame(cfg, 2, []int64{13, 12}, []int64{21, 22})) // break stability
-	f2 := frame(cfg, 2, []int64{31, 12}, []int64{22, 21})      // P2 wins, P1 plays unknown char
+	w.Process(frame(cfg, 2, []int64{13, 12}, []int64{21, 22}, 41, 42)) // break stability
+	f2 := frame(cfg, 2, []int64{31, 12}, []int64{22, 21}, 41, 42)      // P2 wins, P1 plays unknown char
 	w.Process(f2)
 	w.Process(f2)
 	ms, _ = c.Matches(10, 0)

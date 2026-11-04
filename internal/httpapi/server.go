@@ -130,8 +130,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /matches/{id}/edit", s.editSubmit)
 	s.mux.HandleFunc("GET /balance", s.balanceForm)
 	s.mux.HandleFunc("POST /balance", s.balanceSubmit)
-	s.mux.HandleFunc("GET /ports", s.ports)
-	s.mux.HandleFunc("POST /ports", s.portsSubmit)
 
 	s.mux.HandleFunc("GET /api/leaderboard", s.apiLeaderboard)
 	s.mux.HandleFunc("GET /api/players/{name}", s.apiPlayer)
@@ -140,8 +138,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/matches/{id}", s.apiDelete)
 	s.mux.HandleFunc("PUT /api/matches/{id}", s.apiUpdate)
 	s.mux.HandleFunc("POST /api/balance", s.apiBalance)
-	s.mux.HandleFunc("GET /api/ports", s.apiPorts)
-	s.mux.HandleFunc("PUT /api/ports/{port}", s.apiSetPort)
 	s.mux.HandleFunc("GET /api/characters", s.apiCharacters)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 }
@@ -351,30 +347,6 @@ func (s *Server) Balance(names []string, k int, uneven bool) ([]balance.Proposal
 	return balance.Propose(members, k, balance.Options{TopN: 3, AllowUneven: uneven})
 }
 
-func (s *Server) ports(w http.ResponseWriter, r *http.Request) {
-	ps, _ := s.core.Ports()
-	players, _ := s.core.Players()
-	byPort := map[int]string{}
-	for _, p := range ps {
-		byPort[p.Port] = p.Player.Name
-	}
-	s.render(w, r, "ports", map[string]any{"ByPort": byPort, "Players": players})
-}
-
-func (s *Server) portsSubmit(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	for port := 1; port <= 4; port++ {
-		if err := s.core.SetPort(port, r.FormValue(fmt.Sprintf("port%d", port))); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-	}
-	http.Redirect(w, r, "/ports", http.StatusSeeOther)
-}
-
 // ---------- JSON API ----------
 
 type apiEntry struct {
@@ -530,35 +502,6 @@ func (s *Server) apiBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, props)
-}
-
-func (s *Server) apiPorts(w http.ResponseWriter, r *http.Request) {
-	ps, err := s.core.Ports()
-	if err != nil {
-		writeErr(w, 500, err)
-		return
-	}
-	out := map[string]string{}
-	for _, p := range ps {
-		out[strconv.Itoa(p.Port)] = p.Player.Name
-	}
-	writeJSON(w, 200, out)
-}
-
-func (s *Server) apiSetPort(w http.ResponseWriter, r *http.Request) {
-	port, _ := strconv.Atoi(r.PathValue("port"))
-	var in struct {
-		Player string `json:"player"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	if err := s.core.SetPort(port, in.Player); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func (s *Server) apiCharacters(w http.ResponseWriter, r *http.Request) {

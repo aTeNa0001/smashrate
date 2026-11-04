@@ -27,7 +27,7 @@ type ServerConfig struct {
 
 // AuthConfig is the web UI's simple login. With an empty password every
 // request is allowed (LAN-only use). With a password, writes (recording,
-// deleting, ports) require a login; reads too if ReadRequiresLogin.
+// deleting, editing) require a login; reads too if ReadRequiresLogin.
 type AuthConfig struct {
 	Password string `toml:"password"`
 	// APIToken lets scripts call write endpoints with "Authorization: Bearer <token>".

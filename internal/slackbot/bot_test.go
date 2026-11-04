@@ -98,14 +98,3 @@ func TestBalanceFixDeleteHelp(t *testing.T) {
 		t.Fatalf("learn without vision: %q", out)
 	}
 }
-
-func TestPorts(t *testing.T) {
-	b, c := newBot(t)
-	if out, _ := b.Handle("ports P1=太郎 P2=花子", "U1"); !strings.Contains(out, "P1=太郎") {
-		t.Fatalf("ports: %q", out)
-	}
-	ps, _ := c.Ports()
-	if len(ps) != 2 {
-		t.Fatalf("ports = %+v", ps)
-	}
-}

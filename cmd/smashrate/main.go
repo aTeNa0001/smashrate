@@ -38,7 +38,6 @@ Commands:
   history [n]                 print recent matches
   balance <teams> <names...> [uneven]
                               propose balanced teams (2-4 teams, up to 8 players; "uneven" allows unequal sizes)
-  ports [P1=name P2=name]     show or set controller-port owners (fallback when a name tag is not learned yet)
   delete <match-id>           delete a match and recompute
   fix <match-id> <name> <char>  correct a character
   recompute                   rebuild every rating from the match history
@@ -90,8 +89,6 @@ func main() {
 		err = history(c, args)
 	case "balance":
 		err = balanceCmd(c, args)
-	case "ports":
-		err = portsCmd(c, strings.Join(args, " "))
 	case "delete":
 		err = deleteCmd(c, args)
 	case "fix":
@@ -308,28 +305,6 @@ func balanceCmd(c *core.Core, args []string) error {
 			}
 			fmt.Printf("  team %d (%d)  %3.0f%%  %s\n", t+1, len(team), p.WinProb[t]*100, strings.Join(names, ", "))
 		}
-	}
-	return nil
-}
-
-func portsCmd(c *core.Core, text string) error {
-	if strings.TrimSpace(text) != "" {
-		m, err := parse.Ports(text)
-		if err != nil {
-			return err
-		}
-		for port, name := range m {
-			if err := c.SetPort(port, name); err != nil {
-				return err
-			}
-		}
-	}
-	ps, err := c.Ports()
-	if err != nil {
-		return err
-	}
-	for _, p := range ps {
-		fmt.Printf("P%d = %s\n", p.Port, p.Player.Name)
 	}
 	return nil
 }

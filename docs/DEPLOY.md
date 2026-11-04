@@ -12,7 +12,7 @@ addr = "127.0.0.1:8080"          # LAN からの直接アクセスを閉じ、�
 base_url = "https://smash.example.com"
 
 [server.auth]
-password = "長めのパスワード"        # 空なら無効。記録・削除・ポート設定に必要
+password = "長めのパスワード"        # 空なら無効。記録・編集・削除に必要
 api_token = "ランダムな文字列"       # スクリプトから API を叩くとき用（任意）
 read_requires_login = false       # true にすると閲覧にもログインが要る
 trust_cloudflare_access = true    # Access でサインイン済みの人はログイン不要にする

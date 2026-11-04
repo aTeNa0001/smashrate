@@ -100,24 +100,3 @@ func parseMember(s string) (core.EntryInput, error) {
 	}
 	return e, nil
 }
-
-// Ports parses "P1=name P2=name" (also "1=name", "p3:name").
-func Ports(text string) (map[int]string, error) {
-	out := map[int]string{}
-	for _, tok := range strings.Fields(text) {
-		tok = strings.TrimLeft(tok, "pP")
-		sep := strings.IndexAny(tok, "=:")
-		if sep < 1 {
-			return nil, fmt.Errorf("expected P1=name, got %q", tok)
-		}
-		var port int
-		if _, err := fmt.Sscanf(tok[:sep], "%d", &port); err != nil {
-			return nil, fmt.Errorf("bad port in %q", tok)
-		}
-		out[port] = strings.TrimSpace(tok[sep+1:])
-	}
-	if len(out) == 0 {
-		return nil, errors.New("no port assignments given")
-	}
-	return out, nil
-}

@@ -110,27 +110,14 @@ func (w *Watcher) Process(img image.Image) {
 }
 
 func (w *Watcher) handle(img image.Image, r *Reading) {
-	ports, err := w.core.Ports()
-	if err != nil {
-		w.notify("ポート取得エラー: " + err.Error())
-		return
-	}
-	byPort := map[int]string{}
-	for _, p := range ports {
-		byPort[p.Port] = p.Player.Name
-	}
-
 	layout, _ := w.cfg.Layout(r.Players)
 	var in core.MatchInput
 	in.Source = "vision"
 	var unknown []string
 	var unidentified []int
 	for i, s := range r.Slots {
-		// The name tag identifies the human; a port assignment is only a fallback.
+		// The name tag identifies the human.
 		name := s.Name
-		if name == "" {
-			name = byPort[s.Port]
-		}
 		if name == "" {
 			unidentified = append(unidentified, s.Port)
 			if i < len(layout.Slots) {
@@ -153,7 +140,7 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 
 	var msg []string
 	if len(unidentified) > 0 {
-		msg = append(msg, fmt.Sprintf("ポート %v のプレイヤーを特定できなかったため記録していません。名前タグを `learn <画像ID> <名前>` で教えると次回から自動で判別します（応急処置は `ports P%d=名前`）。", unidentified, unidentified[0]))
+		msg = append(msg, fmt.Sprintf("列 %v のプレイヤーを特定できなかったため記録していません。名前タグを `learn <画像ID> <名前>` で教えると次回から自動で判別します。", unidentified))
 	}
 	if len(unknown) > 0 {
 		msg = append(msg, "未知の画像があります。`learn <画像ID> <ラベル>` で教えてください:\n  "+strings.Join(unknown, "\n  "))

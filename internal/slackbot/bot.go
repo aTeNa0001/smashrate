@@ -103,8 +103,6 @@ func (b *Bot) Handle(text, userID string) (string, bool) {
 		return b.record(rest, userID), true
 	case "balance", "team", "teams":
 		return b.balance(rest), true
-	case "ports", "port":
-		return b.ports(rest), true
 	case "link":
 		return b.link(rest, userID), false
 	case "fix":
@@ -129,7 +127,6 @@ func help(cmd string) string {
 		"`" + cmd + " record A > B > C > D` 乱闘の順位を記録、`A > B = C` は同率",
 		"`" + cmd + " record A+B > C+D` チーム戦を記録",
 		"`" + cmd + " balance 2 A B C D E F` チーム分けを提案（2〜4チーム、最大8人。末尾に uneven で人数差を許容）",
-		"`" + cmd + " ports P1=A P2=B` 名前タグが未学習のときの応急処置（ポートの持ち主を仮設定）",
 		"`" + cmd + " link 名前` 自分の Slack をプレイヤーに紐付け",
 		"`" + cmd + " fix <試合ID> <名前> <キャラ>` キャラの誤認識を修正",
 		"`" + cmd + " delete <試合ID>` 対戦を削除して再計算",
@@ -362,33 +359,6 @@ func (b *Bot) balance(arg string) string {
 		}
 	}
 	return sb.String()
-}
-
-func (b *Bot) ports(arg string) string {
-	if strings.TrimSpace(arg) == "" {
-		ps, _ := b.core.Ports()
-		if len(ps) == 0 {
-			return "ポートは未設定です。`ports P1=名前 P2=名前`"
-		}
-		var parts []string
-		for _, p := range ps {
-			parts = append(parts, fmt.Sprintf("P%d=%s", p.Port, p.Player.Name))
-		}
-		return strings.Join(parts, " ")
-	}
-	m, err := parse.Ports(arg)
-	if err != nil {
-		return err.Error()
-	}
-	for port, name := range m {
-		if es, err := parse.Match(name, b.resolver()); err == nil && len(es) == 1 {
-			name = es[0].Player
-		}
-		if err := b.core.SetPort(port, name); err != nil {
-			return "error: " + err.Error()
-		}
-	}
-	return "設定しました: " + b.ports("")
 }
 
 func (b *Bot) link(arg, userID string) string {

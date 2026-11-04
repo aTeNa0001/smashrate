@@ -9,8 +9,8 @@ data_dir = "data"
 base_url = "http://192.168.1.50:8080"
 
 [server.auth]
-# Empty password = no login (LAN-only use). With a password, recording, deleting
-# and port changes require a login; set read_requires_login to protect pages too.
+# Empty password = no login (LAN-only use). With a password, recording, editing
+# and deleting require a login; set read_requires_login to protect pages too.
 password = ""
 api_token = ""
 read_requires_login = false

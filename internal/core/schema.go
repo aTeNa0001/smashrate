@@ -55,13 +55,6 @@ CREATE TABLE IF NOT EXISTS rating_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_player ON rating_history(player_id, scope, match_id);
 
--- which human is holding which controller port right now (used by the vision watcher)
-CREATE TABLE IF NOT EXISTS ports (
-	port       INTEGER PRIMARY KEY,
-	player_id  INTEGER NOT NULL REFERENCES players(id),
-	updated_at TEXT NOT NULL
-);
-
 -- perceptual-hash templates learned for the results screen
 CREATE TABLE IF NOT EXISTS vision_templates (
 	id         INTEGER PRIMARY KEY,

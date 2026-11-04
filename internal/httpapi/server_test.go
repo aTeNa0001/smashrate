@@ -132,7 +132,7 @@ func TestAPIRecordAndPages(t *testing.T) {
 		t.Fatalf("leaderboard: %s", rec.Body)
 	}
 
-	for _, path := range []string{"/", "/players/Taro", "/matches", "/record", "/balance", "/ports", "/api/players/Hanako", "/api/characters"} {
+	for _, path := range []string{"/", "/players/Taro", "/matches", "/record", "/balance", "/api/players/Hanako", "/api/characters"} {
 		rec = httptest.NewRecorder()
 		s.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 200 {
@@ -150,7 +150,7 @@ func TestAPIRecordAndPages(t *testing.T) {
 	}
 }
 
-func TestAPIBalanceAndPorts(t *testing.T) {
+func TestAPIBalance(t *testing.T) {
 	s, _ := newTestServer(t)
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, httptest.NewRequest("POST", "/api/balance", strings.NewReader(`{"members":["A","B","C","D"],"teams":2}`)))
@@ -166,16 +166,6 @@ func TestAPIBalanceAndPorts(t *testing.T) {
 	s.ServeHTTP(rec, httptest.NewRequest("POST", "/api/balance", strings.NewReader(`{"members":["A","B","C","D","E"],"teams":5}`)))
 	if rec.Code != 400 {
 		t.Fatalf("5 teams should be rejected: %d", rec.Code)
-	}
-	rec = httptest.NewRecorder()
-	s.ServeHTTP(rec, httptest.NewRequest("PUT", "/api/ports/1", strings.NewReader(`{"player":"A"}`)))
-	if rec.Code != 200 {
-		t.Fatalf("set port: %d %s", rec.Code, rec.Body)
-	}
-	rec = httptest.NewRecorder()
-	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/ports", nil))
-	if !strings.Contains(rec.Body.String(), `"1":"A"`) {
-		t.Fatalf("ports: %s", rec.Body)
 	}
 }
 

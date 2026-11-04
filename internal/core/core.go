@@ -983,53 +983,6 @@ func (c *Core) CharacterUsage() ([]CharacterUsage, error) {
 	return out, rows.Err()
 }
 
-// ---------- ports (vision) ----------
-
-// PortAssignment maps a controller port to a player.
-type PortAssignment struct {
-	Port      int
-	Player    Player
-	UpdatedAt time.Time
-}
-
-// SetPort records who is holding a controller port.
-func (c *Core) SetPort(port int, playerName string) error {
-	if port < 1 || port > 8 {
-		return fmt.Errorf("port %d out of range", port)
-	}
-	if strings.TrimSpace(playerName) == "" || strings.EqualFold(playerName, "none") {
-		_, err := c.db.Exec(`DELETE FROM ports WHERE port = ?`, port)
-		return err
-	}
-	p, err := c.GetOrCreatePlayer(playerName)
-	if err != nil {
-		return err
-	}
-	_, err = c.db.Exec(`INSERT INTO ports(port, player_id, updated_at) VALUES(?,?,?)
-		ON CONFLICT(port) DO UPDATE SET player_id = excluded.player_id, updated_at = excluded.updated_at`, port, p.ID, now())
-	return err
-}
-
-// Ports returns the current port assignments.
-func (c *Core) Ports() ([]PortAssignment, error) {
-	rows, err := c.db.Query(`SELECT t.port, p.id, p.name, t.updated_at FROM ports t JOIN players p ON p.id = t.player_id ORDER BY t.port`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []PortAssignment
-	for rows.Next() {
-		var a PortAssignment
-		var upd string
-		if err := rows.Scan(&a.Port, &a.Player.ID, &a.Player.Name, &upd); err != nil {
-			return nil, err
-		}
-		a.UpdatedAt = parseTime(upd)
-		out = append(out, a)
-	}
-	return out, rows.Err()
-}
-
 // ---------- vision templates ----------
 
 // Template is a learned perceptual hash.

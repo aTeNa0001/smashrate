@@ -7,7 +7,7 @@
 <datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
 <datalist id="chars">{{range .Characters}}<option value="{{.NameJA}}">{{.NameEN}}</option>{{end}}</datalist>
 <div class="wrap"><table>
-<tr><th>#</th><th>プレイヤー</th><th>キャラ</th><th>チーム</th><th>順位</th><th>ポート</th></tr>
+<tr><th>#</th><th>プレイヤー</th><th>キャラ</th><th>チーム</th><th>順位</th><th>画面上の列</th></tr>
 {{range $i := seq 8}}{{$e := entryAt $m.Entries (sub $i 1)}}<tr>
 <td class="muted">{{$i}}</td>
 <td><input name="p{{$i}}_name" list="players" value="{{with $e}}{{.PlayerName}}{{end}}" autocomplete="off"></td>

@@ -6,8 +6,8 @@
 // portrait is in this box" is a template-matching problem. A dHash is a few
 // hundred integer operations per region, needs no model files, no C
 // libraries and no network, and is robust to the mild scaling/compression
-// a capture board introduces. OCR remains available as a fallback for player
-// tags if ports turn out to be unreliable (see docs/VISION.md).
+// a capture board introduces. Player name tags are matched the same way, so
+// no OCR is needed for a fixed group of members (see docs/VISION.md).
 package vision
 
 import (

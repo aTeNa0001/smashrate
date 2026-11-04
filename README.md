@@ -41,7 +41,6 @@ Windows のミニPC では `go build -o smashrate.exe ./cmd/smashrate` のあと
 /smash fix 12 太郎 ルイージ        キャラ修正
 /smash learn char-1234 ピカチュウ  未知のキャラ画像を学習
 /smash learn name-5678 太郎        未知の名前タグを学習（以後そのタグの人を自動判別）
-/smash ports P1=太郎               タグ未学習時の応急処置
 ```
 
 ### 外部公開（Cloudflare Tunnel + Access）と簡易ログイン
@@ -82,7 +81,6 @@ docs/VISION.md        OCR と他方式の比較、採用理由、調整手順
 | PUT | /api/matches/{id} | 参加者・順位・キャラを差し替えて再計算（本文は POST と同じ） |
 | DELETE | /api/matches/{id} | 削除して再計算 |
 | POST | /api/balance | `{"members":["A","B","C","D"],"teams":2,"allow_uneven":false}` |
-| GET / PUT | /api/ports, /api/ports/{port} | ポート設定 |
 
 ## レート表示
 

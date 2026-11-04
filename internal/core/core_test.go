@@ -191,21 +191,8 @@ func TestUpdateMatch(t *testing.T) {
 	}
 }
 
-func TestPortsAndTemplates(t *testing.T) {
+func TestTemplates(t *testing.T) {
 	c := openTest(t)
-	if err := c.SetPort(1, "A"); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.SetPort(2, "B"); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.SetPort(2, "none"); err != nil {
-		t.Fatal(err)
-	}
-	ps, _ := c.Ports()
-	if len(ps) != 1 || ps[0].Player.Name != "A" {
-		t.Fatalf("ports = %+v", ps)
-	}
 	if err := c.AddTemplate("char", "mario", 0xFFFFFFFFFFFFFFFF); err != nil {
 		t.Fatal(err)
 	}
