@@ -24,10 +24,18 @@ func paint(img *image.RGBA, r image.Rectangle, seed int64) {
 }
 
 func frame(cfg config.VisionConfig, players int, charSeeds, rankSeeds []int64, nameSeeds ...int64) *image.RGBA {
+	return frameMode(cfg, players, "", charSeeds, rankSeeds, nameSeeds...)
+}
+
+func frameMode(cfg config.VisionConfig, players int, mode string, charSeeds, rankSeeds []int64, nameSeeds ...int64) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
 	paint(img, img.Bounds(), 999) // background noise
-	layout, _ := cfg.Layout(players)
-	paint(img, Rect(img.Bounds(), layout.Screen), 1000+int64(players))
+	layout, _ := cfg.Layout(players, mode)
+	screenSeed := 1000 + int64(players)
+	if mode == "team" {
+		screenSeed += 500
+	}
+	paint(img, Rect(img.Bounds(), layout.Screen), screenSeed)
 	for i, s := range layout.Slots {
 		paint(img, Rect(img.Bounds(), s.Char), charSeeds[i])
 		paint(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])
@@ -65,7 +73,7 @@ func TestTeachDetectAndRecord(t *testing.T) {
 
 	// teach from one 1v1 frame: P1 Taro/mario 1st, P2 Hanako/link 2nd
 	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
-	if err := Teach(c, cfg, f1, 2, []string{"マリオ", "link"}, []string{"1st", "2nd"}, []string{"Taro", "Hanako"}); err != nil {
+	if err := Teach(c, cfg, f1, 2, "", []string{"マリオ", "link"}, []string{"1st", "2nd"}, []string{"Taro", "Hanako"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +136,7 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 
 	// teach names along with everything else; no ports configured at all
 	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
-	if err := Teach(c, cfg, f1, 2, []string{"mario", "link"}, []string{"1", "2"}, []string{"Taro", "Hanako"}); err != nil {
+	if err := Teach(c, cfg, f1, 2, "", []string{"mario", "link"}, []string{"1", "2"}, []string{"Taro", "Hanako"}); err != nil {
 		t.Fatal(err)
 	}
 	var msgs []string
@@ -198,12 +206,12 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 
 	// only the screen/char/rank templates are taught; no name tags at all
 	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
-	if err := Teach(c, cfg, f1, 2, []string{"mario", "link"}, []string{"1", "2"}, nil); err != nil {
+	if err := Teach(c, cfg, f1, 2, "", []string{"mario", "link"}, []string{"1", "2"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = c.GetOrCreatePlayer("Hanako") // an existing member, to be fuzzy-matched
 
-	layout, _ := cfg.Layout(2)
+	layout, _ := cfg.Layout(2, "")
 	b := f1.Bounds()
 	tag := func(i int) uint64 { cr := Crop(f1, Rect(b, layout.Slots[i].Name)); return DHash(cr, cr.Bounds()) }
 	fake := &fakeOCR{byHash: map[uint64]string{tag(0): "た ろ う", tag(1): "Hanak0"}}
@@ -251,6 +259,56 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	}
 	if p := w.Pending(); len(p) != 1 {
 		t.Fatalf("pending = %v", p)
+	}
+}
+
+func TestTeamBattleResultsScreen(t *testing.T) {
+	c, err := core.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cfg := config.Default().Vision
+	cfg.StableFrames = 1
+	cfg.CooldownSeconds = 1
+	cfg.OCR.Engine = "none"
+
+	// a 2v2 team results screen: columns A,B (1st) and C,D (2nd)
+	tf := frameMode(cfg, 4, "team", []int64{11, 12, 13, 14}, []int64{21, 21, 22, 22}, 41, 42, 43, 44)
+	if err := Teach(c, cfg, tf, 4, "team", []string{"mario", "link", "fox", "kirby"}, []string{"1", "1", "2", "2"}, []string{"A", "B", "C", "D"}); err != nil {
+		t.Fatal(err)
+	}
+	// and a 4-player free-for-all screen with the same people, taught under its own label
+	ff := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 22, 23, 24}, 41, 42, 43, 44)
+	if err := Teach(c, cfg, ff, 4, "", nil, []string{"1", "2", "3", "4"}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewWatcher(cfg, c, t.TempDir(), func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Process(tf)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 || ms[0].Mode != core.ModeTeam {
+		t.Fatalf("team screen should record a team battle: %+v", ms)
+	}
+	teams := map[string]int{}
+	for _, e := range ms[0].Entries {
+		teams[e.PlayerName] = e.Team
+	}
+	if teams["A"] != teams["B"] || teams["C"] != teams["D"] || teams["A"] == teams["C"] {
+		t.Fatalf("teammates should share a team: %v", teams)
+	}
+	if w := ms[0].Winners(); len(w) != 2 {
+		t.Fatalf("winners = %v", w)
+	}
+
+	// the free-for-all screen is told apart by its own screen template
+	w.Process(ff)
+	ms, _ = c.Matches(10, 0)
+	if len(ms) != 2 || ms[0].Mode != core.ModeFFA {
+		t.Fatalf("ffa screen should record a free-for-all: %+v", ms)
 	}
 }
 

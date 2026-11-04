@@ -161,7 +161,7 @@ func (w *Watcher) Process(img image.Image) {
 }
 
 func (w *Watcher) handle(img image.Image, r *Reading) {
-	layout, _ := w.cfg.Layout(r.Players)
+	layout := r.Layout
 	var in core.MatchInput
 	in.Source = "vision"
 	var unknown []string
@@ -186,7 +186,13 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 			}
 			continue
 		}
-		e := core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: s.Rank, Character: s.Char}
+		// 1on1 / free-for-all: everyone is their own team. Team battle: the
+		// results screen gives teammates the same placement, so rank = team.
+		team := s.Port
+		if r.Team {
+			team = s.Rank
+		}
+		e := core.EntryInput{Player: name, Port: s.Port, Team: team, Rank: s.Rank, Character: s.Char}
 		if s.Char == "" && i < len(layout.Slots) {
 			id := w.stash(KindChar, s.CharHash, img, Rect(img.Bounds(), layout.Slots[i].Char))
 			unknown = append(unknown, fmt.Sprintf("P%d キャラ → %s", s.Port, id))

@@ -38,13 +38,19 @@
    切り抜き画像を `data/unknown/` に保存して Slack に通知し、`/smash learn <画像ID> <ラベル>` で
    登録するとその場で認識できるようになる。順位が読めて人が分かれば、キャラ不明でも試合自体は記録する。
    人が特定できない試合は記録せず通知だけ行う（誤った相手に成績が付くのを防ぐため）。
-4. **開始画面・戦闘中の画面は使わない**  
+4. **チーム戦のリザルト画面は別レイアウト**  
+   チーム戦ではチームごとにまとまった配置になり、順位もチーム単位で表示される。そのため
+   `layouts` は「人数 × 形式（通常 / team）」で持ち、画面判定テンプレートも `results:4` と
+   `results:4:team` で別に学習する（`vision teach -mode team`）。どの列が同じチームかは、
+   チーム戦のリザルトでは味方同士が同じ順位になる性質から「同じ順位 = 同じチーム」で決める。
+   1on1・乱闘は全員が別チームとして記録する。
+5. **開始画面・戦闘中の画面は使わない**  
    キャラ選択画面や戦闘中にも名前タグは出るが、必要な情報（誰が・何で・何位）はリザルト画面に
    すべて揃っていて、位置も安定しているので、リザルト画面だけを見る。戦闘中のタグは位置が動くため
    照合には向かない。将来、途中退出やストック数を拾いたくなったときに追加の画面を検討する。
-5. **安定化と重複防止**  
+6. **安定化と重複防止**  
    同じ読み取り結果が `stable_frames` 回連続したときだけ処理し、同じ画面は `cooldown_seconds` の間は再記録しない。
-6. **誤認識は後から直す**  
+7. **誤認識は後から直す**  
    `/smash fix <試合ID> <名前> <キャラ>` と `/smash delete <試合ID>` で履歴を直すと、全員のレートが
    履歴から再計算される（数千試合でもミリ秒）。
 
@@ -64,6 +70,9 @@ smashrate vision regions -image shot.png -players 2
                                                # キャラ画像と順位バッジがぴったり入るまで layouts を調整
 smashrate vision teach -image shot.png -players 2 -chars マリオ,リンク -ranks 1,2 -names 太郎,花子
 smashrate vision test -image shot.png          # 認識結果と距離を確認
+# チーム戦のリザルト画面も同様に（-mode team）。順位は味方同士で同じ値にする
+smashrate vision regions -image team.png -players 4 -mode team
+smashrate vision teach -image team.png -players 4 -mode team -chars マリオ,リンク,フォックス,カービィ -ranks 1,1,2,2 -names 太郎,花子,けん,みゆ
 ```
 
 ## 判断を変えるとき

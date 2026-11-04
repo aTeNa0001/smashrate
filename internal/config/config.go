@@ -104,11 +104,23 @@ type Slot struct {
 	Name Region `toml:"name"`
 }
 
-// Layout is the results-screen geometry for one player count.
+// Layout is the results-screen geometry for one player count and format.
+// Team battles use a different results screen (players grouped by team), so
+// they get their own layout with Mode = "team"; Mode "" covers 1on1 and
+// free-for-all, whose screens share one geometry.
 type Layout struct {
 	Players int    `toml:"players"`
+	Mode    string `toml:"mode"`   // "" (1on1 / free-for-all) or "team"
 	Screen  Region `toml:"screen"` // region that identifies "this is the results screen"
 	Slots   []Slot `toml:"slots"`
+}
+
+// ScreenLabel is the template label that identifies this layout's screen.
+func (l Layout) ScreenLabel() string {
+	if l.Mode == "team" {
+		return fmt.Sprintf("results:%d:team", l.Players)
+	}
+	return fmt.Sprintf("results:%d", l.Players)
 }
 
 // Default returns a configuration that works out of the box for the web UI.
@@ -159,6 +171,13 @@ func defaultLayouts() []Layout {
 			}
 		}
 		out = append(out, Layout{Players: n, Screen: Region{X: 0.0, Y: 0.86, W: 1.0, H: 0.14}, Slots: slots})
+		// Team battles (3+ players) show a differently arranged results screen.
+		// The same geometry is only a placeholder until tuned on a real screenshot.
+		if n >= 3 {
+			teamSlots := make([]Slot, len(slots))
+			copy(teamSlots, slots)
+			out = append(out, Layout{Players: n, Mode: "team", Screen: Region{X: 0.0, Y: 0.86, W: 1.0, H: 0.14}, Slots: teamSlots})
+		}
 	}
 	return out
 }
@@ -182,12 +201,22 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Layout returns the layout for a player count.
-func (v VisionConfig) Layout(players int) (Layout, bool) {
+// Layout returns the layout for a player count and format ("" or "team").
+func (v VisionConfig) Layout(players int, mode string) (Layout, bool) {
+	if mode != "team" {
+		mode = ""
+	}
 	for _, l := range v.Layouts {
-		if l.Players == players {
+		if l.Players == players && normMode(l.Mode) == mode {
 			return l, true
 		}
 	}
 	return Layout{}, false
+}
+
+func normMode(m string) string {
+	if m == "team" {
+		return "team"
+	}
+	return ""
 }

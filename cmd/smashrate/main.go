@@ -46,9 +46,11 @@ Commands:
   recompute                   rebuild every rating from the match history
   vision devices              list capture devices seen by ffmpeg
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
-  vision regions -image f     write crops of every layout region (for tuning smashrate.toml)
-  vision teach -image f -players N -chars a,b -ranks 1,2 -names Taro,Hanako
+  vision regions -image f [-players N] [-mode team]
+                              write crops of every layout region (for tuning smashrate.toml)
+  vision teach -image f -players N [-mode team] -chars a,b -ranks 1,2 -names Taro,Hanako
                               learn the results screen + its characters/ranks/name tags from a screenshot
+                              (teach the team-battle results screen separately with -mode team)
   vision test -image f        run the detector on a screenshot and print what it sees
   vision ocr -image f         run the name-tag OCR engine on an image and print the text
   vision watch                run only the capture watcher (no web server)
@@ -356,6 +358,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	imagePath := fs.String("image", "", "screenshot file (PNG/JPEG)")
 	out := fs.String("out", "", "output file or directory")
 	players := fs.Int("players", 2, "number of players on the results screen")
+	mode := fs.String("mode", "", `"" for 1on1 / free-for-all, "team" for the team-battle results screen`)
 	chars := fs.String("chars", "", "comma-separated characters per column (P1,P2,...)")
 	ranks := fs.String("ranks", "", "comma-separated placements per column, e.g. 1,2")
 	names := fs.String("names", "", "comma-separated player names per column (the name tags)")
@@ -399,9 +402,9 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
-		layout, ok := cfg.Vision.Layout(*players)
+		layout, ok := cfg.Vision.Layout(*players, *mode)
 		if !ok {
-			return fmt.Errorf("no layout for %d players", *players)
+			return fmt.Errorf("no layout for %d players (mode %q)", *players, *mode)
 		}
 		b := img.Bounds()
 		save := func(name string, r config.Region) error {
@@ -431,7 +434,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := vision.Teach(c, cfg.Vision, img, *players, splitCSV(*chars), splitCSV(*ranks), splitCSV(*names)); err != nil {
+		if err := vision.Teach(c, cfg.Vision, img, *players, *mode, splitCSV(*chars), splitCSV(*ranks), splitCSV(*names)); err != nil {
 			return err
 		}
 		fmt.Println("learned templates from", *imagePath)
@@ -453,7 +456,11 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 			fmt.Println("not a results screen (no screen template within threshold)")
 			return nil
 		}
-		fmt.Printf("results screen, %d players\n", r.Players)
+		kind := "1on1 / free-for-all"
+		if r.Team {
+			kind = "team battle"
+		}
+		fmt.Printf("results screen, %d players (%s)\n", r.Players, kind)
 		for _, s := range r.Slots {
 			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist)
 		}

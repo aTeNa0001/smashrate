@@ -37,13 +37,15 @@ type SlotReading struct {
 // Reading is a recognised results screen.
 type Reading struct {
 	Players int
+	Team    bool // team-battle results screen: players sharing a rank are one team
+	Layout  config.Layout
 	Slots   []SlotReading
 }
 
 // Key is a stable string used to compare consecutive readings.
 func (r Reading) Key() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d:", r.Players)
+	fmt.Fprintf(&sb, "%d:%v:", r.Players, r.Team)
 	for _, s := range r.Slots {
 		fmt.Fprintf(&sb, "P%d=%s/%s/%d;", s.Port, s.Name, s.Char, s.Rank)
 	}
@@ -104,13 +106,13 @@ func (d *Detector) classify(kind string, h uint64, threshold int) (string, int, 
 func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 	b := img.Bounds()
 	for _, layout := range d.cfg.Layouts {
-		want := fmt.Sprintf("results:%d", layout.Players)
+		want := layout.ScreenLabel()
 		h := DHash(img, Rect(b, layout.Screen))
 		label, _, ok := d.classify(KindScreen, h, d.cfg.ScreenThreshold)
 		if !ok || label != want {
 			continue
 		}
-		r := &Reading{Players: layout.Players}
+		r := &Reading{Players: layout.Players, Team: layout.Mode == "team", Layout: layout}
 		for _, slot := range layout.Slots {
 			sr := SlotReading{Port: slot.Port}
 			sr.NameHash = DHash(img, Rect(b, slot.Name))
@@ -163,7 +165,7 @@ func NormalizeLabel(kind, label string) (string, error) {
 		if strings.HasPrefix(l, "results:") {
 			return l, nil
 		}
-		return "", fmt.Errorf("screen label must be results:<players>, got %q", label)
+		return "", fmt.Errorf("screen label must be results:<players> or results:<players>:team, got %q", label)
 	case KindName:
 		if label == "" {
 			return "", fmt.Errorf("player name is empty")
@@ -175,15 +177,16 @@ func NormalizeLabel(kind, label string) (string, error) {
 
 // Teach registers templates for every region of one layout from a known
 // frame: the screen hash, each slot's character, rank and player name tag.
-// chars[i] / ranks[i] / names[i] correspond to layout.Slots[i]; empty strings
-// are skipped. Names create the player if needed.
-func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, chars, ranks, names []string) error {
-	layout, ok := cfg.Layout(players)
+// mode is "" (1on1 / free-for-all) or "team". chars[i] / ranks[i] / names[i]
+// correspond to layout.Slots[i]; empty strings are skipped. Names create the
+// player if needed.
+func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, mode string, chars, ranks, names []string) error {
+	layout, ok := cfg.Layout(players, mode)
 	if !ok {
-		return fmt.Errorf("no layout for %d players", players)
+		return fmt.Errorf("no layout for %d players (mode %q)", players, mode)
 	}
 	b := img.Bounds()
-	if err := c.AddTemplate(KindScreen, fmt.Sprintf("results:%d", players), DHash(img, Rect(b, layout.Screen))); err != nil {
+	if err := c.AddTemplate(KindScreen, layout.ScreenLabel(), DHash(img, Rect(b, layout.Screen))); err != nil {
 		return err
 	}
 	for i, slot := range layout.Slots {
