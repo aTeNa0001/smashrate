@@ -23,7 +23,7 @@ func paint(img *image.RGBA, r image.Rectangle, seed int64) {
 	}
 }
 
-func frame(cfg config.VisionConfig, players int, charSeeds, rankSeeds []int64) *image.RGBA {
+func frame(cfg config.VisionConfig, players int, charSeeds, rankSeeds []int64, nameSeeds ...int64) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
 	paint(img, img.Bounds(), 999) // background noise
 	layout, _ := cfg.Layout(players)
@@ -31,6 +31,9 @@ func frame(cfg config.VisionConfig, players int, charSeeds, rankSeeds []int64) *
 	for i, s := range layout.Slots {
 		paint(img, Rect(img.Bounds(), s.Char), charSeeds[i])
 		paint(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])
+		if i < len(nameSeeds) {
+			paint(img, Rect(img.Bounds(), s.Name), nameSeeds[i])
+		}
 	}
 	return img
 }
@@ -60,9 +63,9 @@ func TestTeachDetectAndRecord(t *testing.T) {
 	cfg.StableFrames = 2
 	cfg.CooldownSeconds = 1
 
-	// teach from one 1v1 frame: P1 mario 1st, P2 link 2nd
+	// teach from one 1v1 frame: P1 mario 1st, P2 link 2nd (ports as fallback identity)
 	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22})
-	if err := Teach(c, cfg, f1, 2, []string{"マリオ", "link"}, []string{"1st", "2nd"}); err != nil {
+	if err := Teach(c, cfg, f1, 2, []string{"マリオ", "link"}, []string{"1st", "2nd"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	_ = c.SetPort(1, "Taro")
@@ -112,6 +115,62 @@ func TestTeachDetectAndRecord(t *testing.T) {
 	paint(noise, noise.Bounds(), 4242)
 	if _, ok := w.det.Detect(noise); ok {
 		t.Fatal("noise should not be detected as a results screen")
+	}
+}
+
+func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
+	c, err := core.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cfg := config.Default().Vision
+	cfg.StableFrames = 1
+	cfg.CooldownSeconds = 1
+
+	// teach names along with everything else; no ports configured at all
+	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
+	if err := Teach(c, cfg, f1, 2, []string{"mario", "link"}, []string{"1", "2"}, []string{"Taro", "Hanako"}); err != nil {
+		t.Fatal(err)
+	}
+	var msgs []string
+	w, err := NewWatcher(cfg, c, t.TempDir(), func(s string) { msgs = append(msgs, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Process(f1)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 || ms[0].Entries[0].PlayerName != "Taro" || ms[0].Entries[1].PlayerName != "Hanako" {
+		t.Fatalf("name-tag identification failed: %+v msgs=%v", ms, msgs)
+	}
+
+	// players swap seats: names follow the tags, not the ports
+	f2 := frame(cfg, 2, []int64{12, 11}, []int64{21, 22}, 42, 41)
+	w.Process(f2)
+	ms, _ = c.Matches(10, 0)
+	if len(ms) != 2 || ms[0].Entries[0].PlayerName != "Hanako" || ms[0].Entries[0].Rank != 1 {
+		t.Fatalf("swapped seats: %+v", ms[0].Entries)
+	}
+
+	// a newcomer with an unknown tag: nothing recorded, tag stashed, learnable
+	f3 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 77)
+	w.Process(f3)
+	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
+		t.Fatalf("unknown tag should block recording, got %d matches", len(ms))
+	}
+	pend := w.Pending()
+	if len(pend) != 1 || !strings.HasPrefix(pend[0], KindName) {
+		t.Fatalf("pending = %v msgs=%v", pend, msgs)
+	}
+	if err := w.Learn(pend[0], "Jiro"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.PlayerByName("Jiro"); err != nil {
+		t.Fatal("learning a name tag should create the player")
+	}
+	w.Process(f3)
+	if ms, _ = c.Matches(10, 0); len(ms) != 3 || ms[0].Entries[1].PlayerName != "Jiro" {
+		t.Fatalf("after learning the tag: %+v", ms)
 	}
 }
 

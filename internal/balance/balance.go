@@ -3,6 +3,7 @@ package balance
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -37,13 +38,29 @@ type Options struct {
 
 const bruteForceLimit = 2_000_000
 
+// Smash Bros. Ultimate limits: up to 8 fighters, up to 4 teams.
+const (
+	MaxMembers = 8
+	MaxTeams   = 4
+)
+
 // Propose returns the most balanced ways to split members into k teams,
 // best first. For small inputs every split is enumerated; larger ones use
 // repeated randomized hill climbing.
+//
+// With opt.AllowUneven, team sizes may differ freely (e.g. 7 players as
+// 4/2/1): strength is the sum of mu, so a smaller team is only proposed when
+// its members are strong enough to make up for the missing player.
 func Propose(members []Member, k int, opt Options) ([]Proposal, error) {
 	n := len(members)
 	if k < 2 {
 		return nil, errors.New("balance: need at least two teams")
+	}
+	if k > MaxTeams {
+		return nil, fmt.Errorf("balance: at most %d teams", MaxTeams)
+	}
+	if n > MaxMembers {
+		return nil, fmt.Errorf("balance: at most %d members", MaxMembers)
 	}
 	if n < k {
 		return nil, errors.New("balance: more teams than members")
@@ -73,7 +90,7 @@ func Propose(members []Member, k int, opt Options) ([]Proposal, error) {
 		}
 		for restart := 0; restart < 200; restart++ {
 			assign := randomAssignment(rng, n, k, sizes)
-			hillClimb(members, assign, k, rng)
+			hillClimb(members, assign, k, rng, opt.AllowUneven)
 			add(assign)
 		}
 	}
@@ -180,11 +197,32 @@ func spread(members []Member, assign []int, k int) float64 {
 	return hi - lo
 }
 
-func hillClimb(members []Member, assign []int, k int, rng *rand.Rand) {
+func hillClimb(members []Member, assign []int, k int, rng *rand.Rand, uneven bool) {
 	n := len(assign)
 	cur := spread(members, assign, k)
+	count := make([]int, k)
+	for _, t := range assign {
+		count[t]++
+	}
 	for iter := 0; iter < 400; iter++ {
-		i, j := rng.Intn(n), rng.Intn(n)
+		i := rng.Intn(n)
+		if uneven && rng.Intn(2) == 0 {
+			// move one player to another team, keeping every team non-empty
+			from, to := assign[i], rng.Intn(k)
+			if from == to || count[from] == 1 {
+				continue
+			}
+			assign[i] = to
+			if s := spread(members, assign, k); s < cur {
+				cur = s
+				count[from]--
+				count[to]++
+			} else {
+				assign[i] = from
+			}
+			continue
+		}
+		j := rng.Intn(n)
 		if assign[i] == assign[j] {
 			continue
 		}

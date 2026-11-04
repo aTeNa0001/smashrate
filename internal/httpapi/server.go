@@ -243,21 +243,23 @@ func (s *Server) balanceSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	k, _ := strconv.Atoi(r.FormValue("teams"))
+	uneven := r.FormValue("uneven") != ""
 	names := r.Form["members"]
 	for _, extra := range strings.FieldsFunc(r.FormValue("extra"), func(c rune) bool { return c == ',' || c == '\n' || c == ' ' || c == '　' }) {
 		names = append(names, extra)
 	}
-	props, err := s.Balance(names, k)
+	props, err := s.Balance(names, k, uneven)
 	players, _ := s.core.Players()
-	data := map[string]any{"Players": players, "Teams": k, "Selected": names, "Proposals": props}
+	data := map[string]any{"Players": players, "Teams": k, "Uneven": uneven, "Selected": names, "Proposals": props}
 	if err != nil {
 		data["Error"] = err.Error()
 	}
 	s.render(w, r, "balance", data)
 }
 
-// Balance resolves names to ratings and proposes team splits.
-func (s *Server) Balance(names []string, k int) ([]balance.Proposal, error) {
+// Balance resolves names to ratings and proposes team splits. With uneven,
+// team sizes may differ freely (Smash allows e.g. 4 vs 2 vs 1).
+func (s *Server) Balance(names []string, k int, uneven bool) ([]balance.Proposal, error) {
 	var members []balance.Member
 	seen := map[string]bool{}
 	for _, n := range names {
@@ -272,7 +274,7 @@ func (s *Server) Balance(names []string, k int) ([]balance.Proposal, error) {
 		}
 		members = append(members, balance.Member{Name: p.Name, Rating: s.core.PlayerRating(p.ID, core.ScopeOverall).Rating})
 	}
-	return balance.Propose(members, k, balance.Options{TopN: 3})
+	return balance.Propose(members, k, balance.Options{TopN: 3, AllowUneven: uneven})
 }
 
 func (s *Server) ports(w http.ResponseWriter, r *http.Request) {
@@ -409,14 +411,15 @@ func (s *Server) apiDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiBalance(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Members []string `json:"members"`
-		Teams   int      `json:"teams"`
+		Members     []string `json:"members"`
+		Teams       int      `json:"teams"`
+		AllowUneven bool     `json:"allow_uneven"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeErr(w, 400, err)
 		return
 	}
-	props, err := s.Balance(in.Members, in.Teams)
+	props, err := s.Balance(in.Members, in.Teams, in.AllowUneven)
 	if err != nil {
 		writeErr(w, 400, err)
 		return

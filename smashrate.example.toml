@@ -48,14 +48,16 @@ cooldown_seconds = 90
 screen_threshold = 10
 char_threshold = 12
 rank_threshold = 10
+name_threshold = 10
 
 # Layouts are fractions of the frame (0..1). The defaults are a starting point;
 # tune them with `smashrate vision regions -image shot.png -players 2` until the
-# crops in data/regions/ show exactly the fighter portrait and the placement badge.
+# crops in data/regions/ show exactly the fighter portrait, the placement badge
+# and the player's name tag.
 # [[vision.layouts]]
 # players = 2
 # screen = { x = 0.0, y = 0.86, w = 1.0, h = 0.14 }
 # slots = [
-#   { port = 1, char = { x = 0.075, y = 0.30, w = 0.35, h = 0.35 }, rank = { x = 0.05, y = 0.08, w = 0.175, h = 0.14 } },
-#   { port = 2, char = { x = 0.575, y = 0.30, w = 0.35, h = 0.35 }, rank = { x = 0.55, y = 0.08, w = 0.175, h = 0.14 } },
+#   { port = 1, char = { x = 0.075, y = 0.30, w = 0.35, h = 0.35 }, rank = { x = 0.05, y = 0.08, w = 0.175, h = 0.14 }, name = { x = 0.05, y = 0.67, w = 0.40, h = 0.08 } },
+#   { port = 2, char = { x = 0.575, y = 0.30, w = 0.35, h = 0.35 }, rank = { x = 0.55, y = 0.08, w = 0.175, h = 0.14 }, name = { x = 0.55, y = 0.67, w = 0.40, h = 0.08 } },
 # ]

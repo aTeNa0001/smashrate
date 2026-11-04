@@ -128,12 +128,12 @@ func help(cmd string) string {
 		"`" + cmd + " record A:マリオ > B:リンク` 1on1 を記録（A の勝ち）",
 		"`" + cmd + " record A > B > C > D` 乱闘の順位を記録、`A > B = C` は同率",
 		"`" + cmd + " record A+B > C+D` チーム戦を記録",
-		"`" + cmd + " balance 2 A B C D E F` チーム分けを提案",
-		"`" + cmd + " ports P1=A P2=B` コントローラーポートの持ち主を設定（自動記録用）",
+		"`" + cmd + " balance 2 A B C D E F` チーム分けを提案（2〜4チーム、最大8人。末尾に uneven で人数差を許容）",
+		"`" + cmd + " ports P1=A P2=B` 名前タグが未学習のときの応急処置（ポートの持ち主を仮設定）",
 		"`" + cmd + " link 名前` 自分の Slack をプレイヤーに紐付け",
 		"`" + cmd + " fix <試合ID> <名前> <キャラ>` キャラの誤認識を修正",
 		"`" + cmd + " delete <試合ID>` 対戦を削除して再計算",
-		"`" + cmd + " learn <画像ID> <キャラ|1st..4th>` 未知の画像にラベルを付けて学習",
+		"`" + cmd + " learn <画像ID> <キャラ|1st..4th|プレイヤー名>` 未知の画像（キャラ・順位・名前タグ）にラベルを付けて学習",
 	}, "\n")
 }
 
@@ -317,8 +317,19 @@ func (b *Bot) record(arg, userID string) string {
 
 func (b *Bot) balance(arg string) string {
 	fields := strings.Fields(arg)
+	uneven := false
+	var rest []string
+	for _, f := range fields {
+		switch strings.ToLower(f) {
+		case "uneven", "不均等", "人数差":
+			uneven = true
+		default:
+			rest = append(rest, f)
+		}
+	}
+	fields = rest
 	if len(fields) < 3 {
-		return "使い方: balance <チーム数> 名前1 名前2 ..."
+		return "使い方: balance <チーム数(2-4)> 名前1 名前2 ...（最大8人。末尾に uneven で人数差を許容）"
 	}
 	k, err := strconv.Atoi(fields[0])
 	if err != nil {
@@ -335,7 +346,7 @@ func (b *Bot) balance(arg string) string {
 		}
 		members = append(members, balance.Member{Name: p.Name, Rating: b.core.PlayerRating(p.ID, core.ScopeOverall).Rating})
 	}
-	props, err := balance.Propose(members, k, balance.Options{TopN: 3})
+	props, err := balance.Propose(members, k, balance.Options{TopN: 3, AllowUneven: uneven})
 	if err != nil {
 		return "error: " + err.Error()
 	}
@@ -347,7 +358,7 @@ func (b *Bot) balance(arg string) string {
 			for _, m := range team {
 				names = append(names, fmt.Sprintf("%s(%d)", m.Name, m.Rating.Display()))
 			}
-			fmt.Fprintf(&sb, "  チーム%d %.0f%%: %s\n", t+1, p.WinProb[t]*100, strings.Join(names, ", "))
+			fmt.Fprintf(&sb, "  チーム%d %d人 %.0f%%: %s\n", t+1, len(team), p.WinProb[t]*100, strings.Join(names, ", "))
 		}
 	}
 	return sb.String()
@@ -427,7 +438,7 @@ func (b *Bot) learn(arg string) string {
 		if len(p) == 0 {
 			return "ラベル待ちの画像はありません。"
 		}
-		return "ラベル待ち: " + strings.Join(p, ", ") + "\n`learn <画像ID> <キャラ|1st..4th|results>`"
+		return "ラベル待ち: " + strings.Join(p, ", ") + "\n`learn <画像ID> <キャラ|1st..4th|プレイヤー名>`"
 	}
 	if len(f) < 2 {
 		return "使い方: learn <画像ID> <ラベル>"

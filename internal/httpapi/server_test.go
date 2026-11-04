@@ -148,6 +148,16 @@ func TestAPIBalanceAndPorts(t *testing.T) {
 		t.Fatalf("balance: %d %s", rec.Code, rec.Body)
 	}
 	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("POST", "/api/balance", strings.NewReader(`{"members":["A","B","C","D","E","F","G"],"teams":3,"allow_uneven":true}`)))
+	if rec.Code != 200 {
+		t.Fatalf("uneven balance: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("POST", "/api/balance", strings.NewReader(`{"members":["A","B","C","D","E"],"teams":5}`)))
+	if rec.Code != 400 {
+		t.Fatalf("5 teams should be rejected: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
 	s.ServeHTTP(rec, httptest.NewRequest("PUT", "/api/ports/1", strings.NewReader(`{"player":"A"}`)))
 	if rec.Code != 200 {
 		t.Fatalf("set port: %d %s", rec.Code, rec.Body)

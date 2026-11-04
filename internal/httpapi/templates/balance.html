@@ -1,6 +1,6 @@
 {{template "header" .}}
 <h1>チーム分け</h1>
-<p class="muted">参加メンバーとチーム数を選ぶと、総合レート（μ）の合計が最も近くなる分け方を 3 案提示します。</p>
+<p class="muted">参加メンバー（最大 8 人）とチーム数（最大 4）を選ぶと、総合レート（μ）の合計が最も近くなる分け方を 3 案提示します。「人数差を許容」にすると 4 vs 2 vs 1 のような分け方も候補になり、少ない側に強い人を寄せて釣り合わせます。</p>
 {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
 <form method="post" action="/balance">
 <h2>メンバー</h2>
@@ -9,14 +9,15 @@
 </div>
 <div class="row" style="margin-top:12px">
   <label>未登録の名前（カンマ区切り） <input name="extra" style="min-width:260px"></label>
-  <label>チーム数 <input name="teams" type="number" min="2" max="8" value="{{.Teams}}" style="width:5em"></label>
+  <label>チーム数 <input name="teams" type="number" min="2" max="4" value="{{.Teams}}" style="width:5em"></label>
+  <label style="flex-direction:row;align-items:center;gap:6px;font-size:14px;color:var(--fg)"><input type="checkbox" name="uneven" value="1" {{if .Uneven}}checked{{end}}> 人数差を許容</label>
   <button type="submit">提案する</button>
 </div>
 </form>
 {{range $i, $p := .Proposals}}
 <h2>案 {{inc $i}} <span class="muted">強さの差 {{f1 $p.Spread}}</span></h2>
 <div class="proposal">
-{{range $t, $team := $p.Teams}}<div class="team"><b>チーム {{inc $t}}</b> <span class="muted">勝率予測 {{pct (index $p.WinProb $t)}}</span><br>
+{{range $t, $team := $p.Teams}}<div class="team"><b>チーム {{inc $t}}</b> <span class="muted">{{len $team}}人 · 勝率予測 {{pct (index $p.WinProb $t)}}</span><br>
 {{range $team}}<a href="/players/{{.Name}}">{{.Name}}</a> <span class="muted">{{.Rating.Display}}</span><br>{{end}}</div>{{end}}
 </div>
 {{end}}

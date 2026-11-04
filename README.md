@@ -9,8 +9,8 @@
 - **レーティング**: OpenSkill（Plackett–Luce）を純 Go で実装。1on1・乱闘（最大 8 人）・チーム戦（人数不均衡や同率も可）を同じ式で扱う。
   総合レートに加え、形式別（1on1 / 乱闘 / チーム）とキャラ別のサブレートを並行して更新。
 - **戦績**: 勝率、連勝、平均順位、使用キャラとキャラ別勝率、1on1 の対戦相手別成績、レート推移。
-- **チーム分け**: メンバーとチーム数を指定すると、総合レートが釣り合う分け方を勝率予測付きで 3 案提示。
-- **自動記録**: キャプチャボードの映像からリザルト画面を検出し、ポート→プレイヤーの対応とキャラ・順位の画像照合で記録（OCR 不要。詳細は [docs/VISION.md](docs/VISION.md)）。
+- **チーム分け**: メンバー（最大 8 人）とチーム数（2〜4）を指定すると、総合レートが釣り合う分け方を勝率予測付きで 3 案提示。人数差のある分け方（7 人を 4/2/1 など）も許容でき、その場合は少ない側に強い人を寄せて釣り合わせる。
+- **自動記録**: キャプチャボードの映像からリザルト画面を検出し、名前タグ・キャラ・順位をすべて画像照合で読んで記録（OCR 不要、ポート設定も不要。未知のタグやキャラは Slack から教えて育てる。詳細は [docs/VISION.md](docs/VISION.md)）。
 - **インターフェース**: Web UI（LAN 内）、JSON API、Slack スラッシュコマンド（Socket Mode なので公開 URL 不要）、CLI。
 - **訂正**: 試合の削除やキャラ修正を行うと、全履歴からレートを再計算。
 
@@ -38,9 +38,10 @@ Windows のミニPC では `go build -o smashrate.exe ./cmd/smashrate` のあと
 /smash record A > B > C > D        乱闘の順位
 /smash record A+B > C+D            チーム戦
 /smash balance 2 A B C D E F       チーム分け
-/smash ports P1=太郎 P2=花子       自動記録用のポート設定
 /smash fix 12 太郎 ルイージ        キャラ修正
-/smash learn char-1234 ピカチュウ  未知画像の学習
+/smash learn char-1234 ピカチュウ  未知のキャラ画像を学習
+/smash learn name-5678 太郎        未知の名前タグを学習（以後そのタグの人を自動判別）
+/smash ports P1=太郎               タグ未学習時の応急処置
 ```
 
 ### 外部公開（Cloudflare Tunnel + Access）と簡易ログイン
@@ -79,7 +80,7 @@ docs/VISION.md        OCR と他方式の比較、採用理由、調整手順
 | GET | /api/matches?limit=&offset= | 対戦履歴 |
 | POST | /api/matches | `{"entries":[{"player":"A","character":"mario","team":1,"rank":1},...]}` |
 | DELETE | /api/matches/{id} | 削除して再計算 |
-| POST | /api/balance | `{"members":["A","B","C","D"],"teams":2}` |
+| POST | /api/balance | `{"members":["A","B","C","D"],"teams":2,"allow_uneven":false}` |
 | GET / PUT | /api/ports, /api/ports/{port} | ポート設定 |
 
 ## レート表示

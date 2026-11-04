@@ -17,11 +17,15 @@ const (
 	KindScreen = "screen" // label "results:<players>"
 	KindChar   = "char"   // label = character key
 	KindRank   = "rank"   // label = "1".."8"
+	KindName   = "name"   // label = player name (as shown on the name tag)
 )
 
 // SlotReading is what was recognised in one player column.
 type SlotReading struct {
 	Port     int
+	Name     string // player name from the name tag, "" if unknown
+	NameDist int
+	NameHash uint64
 	Char     string // character key, "" if unknown
 	CharDist int
 	CharHash uint64
@@ -41,7 +45,7 @@ func (r Reading) Key() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%d:", r.Players)
 	for _, s := range r.Slots {
-		fmt.Fprintf(&sb, "P%d=%s/%d;", s.Port, s.Char, s.Rank)
+		fmt.Fprintf(&sb, "P%d=%s/%s/%d;", s.Port, s.Name, s.Char, s.Rank)
 	}
 	return sb.String()
 }
@@ -71,7 +75,7 @@ func NewDetector(cfg config.VisionConfig, c *core.Core) (*Detector, error) {
 // Reload re-reads templates.
 func (d *Detector) Reload(c *core.Core) error {
 	d.templates = map[string][]core.Template{}
-	for _, kind := range []string{KindScreen, KindChar, KindRank} {
+	for _, kind := range []string{KindScreen, KindChar, KindRank, KindName} {
 		ts, err := c.Templates(kind)
 		if err != nil {
 			return err
@@ -109,6 +113,12 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 		r := &Reading{Players: layout.Players}
 		for _, slot := range layout.Slots {
 			sr := SlotReading{Port: slot.Port}
+			sr.NameHash = DHash(img, Rect(b, slot.Name))
+			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
+				sr.Name, sr.NameDist = lbl, dist
+			} else {
+				sr.NameDist = dist
+			}
 			sr.CharHash = DHash(img, Rect(b, slot.Char))
 			if lbl, dist, ok := d.classify(KindChar, sr.CharHash, d.cfg.CharThreshold); ok {
 				sr.Char, sr.CharDist = lbl, dist
@@ -154,14 +164,20 @@ func NormalizeLabel(kind, label string) (string, error) {
 			return l, nil
 		}
 		return "", fmt.Errorf("screen label must be results:<players>, got %q", label)
+	case KindName:
+		if label == "" {
+			return "", fmt.Errorf("player name is empty")
+		}
+		return label, nil
 	}
 	return "", fmt.Errorf("unknown template kind %q", kind)
 }
 
 // Teach registers templates for every region of one layout from a known
-// frame: the screen hash, each slot's character and each slot's rank.
-// chars[i] / ranks[i] correspond to layout.Slots[i]; empty strings are skipped.
-func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, chars, ranks []string) error {
+// frame: the screen hash, each slot's character, rank and player name tag.
+// chars[i] / ranks[i] / names[i] correspond to layout.Slots[i]; empty strings
+// are skipped. Names create the player if needed.
+func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, chars, ranks, names []string) error {
 	layout, ok := cfg.Layout(players)
 	if !ok {
 		return fmt.Errorf("no layout for %d players", players)
@@ -186,6 +202,15 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 				return err
 			}
 			if err := c.AddTemplate(KindRank, lbl, DHash(img, Rect(b, slot.Rank))); err != nil {
+				return err
+			}
+		}
+		if i < len(names) && strings.TrimSpace(names[i]) != "" {
+			p, err := c.GetOrCreatePlayer(names[i])
+			if err != nil {
+				return err
+			}
+			if err := c.AddTemplate(KindName, p.Name, DHash(img, Rect(b, slot.Name))); err != nil {
 				return err
 			}
 		}

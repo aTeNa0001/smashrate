@@ -58,7 +58,7 @@ func NewWatcher(cfg config.VisionConfig, c *core.Core, dataDir string, notify fu
 // Run consumes frames until ctx ends or the source is exhausted.
 func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
 	if w.det.TemplateCount(KindScreen) == 0 {
-		w.notify("リザルト画面のテンプレートが未登録です。`smashrate vision teach` で最初の画面を学習させてください。")
+		w.notify("リザルト画面のテンプレートが未登録です。`smashrate vision teach` で最初の画面（キャラ・順位・名前タグ）を学習させてください。")
 	}
 	for {
 		select {
@@ -124,11 +124,19 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	var in core.MatchInput
 	in.Source = "vision"
 	var unknown []string
-	var missingPorts []int
+	var unidentified []int
 	for i, s := range r.Slots {
-		name, ok := byPort[s.Port]
-		if !ok {
-			missingPorts = append(missingPorts, s.Port)
+		// The name tag identifies the human; a port assignment is only a fallback.
+		name := s.Name
+		if name == "" {
+			name = byPort[s.Port]
+		}
+		if name == "" {
+			unidentified = append(unidentified, s.Port)
+			if i < len(layout.Slots) {
+				id := w.stash(KindName, s.NameHash, img, Rect(img.Bounds(), layout.Slots[i].Name))
+				unknown = append(unknown, fmt.Sprintf("P%d 名前タグ → %s", s.Port, id))
+			}
 			continue
 		}
 		e := core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: s.Rank, Character: s.Char}
@@ -144,20 +152,20 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	}
 
 	var msg []string
-	if len(missingPorts) > 0 {
-		msg = append(msg, fmt.Sprintf("ポート %v のプレイヤーが未設定のため記録しませんでした。`ports P1=名前` で設定してください。", missingPorts))
+	if len(unidentified) > 0 {
+		msg = append(msg, fmt.Sprintf("ポート %v のプレイヤーを特定できなかったため記録していません。名前タグを `learn <画像ID> <名前>` で教えると次回から自動で判別します（応急処置は `ports P%d=名前`）。", unidentified, unidentified[0]))
 	}
 	if len(unknown) > 0 {
 		msg = append(msg, "未知の画像があります。`learn <画像ID> <ラベル>` で教えてください:\n  "+strings.Join(unknown, "\n  "))
 	}
-	if len(missingPorts) == 0 && r.Complete() && len(in.Entries) >= 2 {
+	if len(unidentified) == 0 && r.Complete() && len(in.Entries) >= 2 {
 		m, err := w.core.RecordMatch(in)
 		if err != nil {
 			msg = append(msg, "自動記録に失敗: "+err.Error())
 		} else {
 			msg = append(msg, "自動記録しました "+describe(*m))
 		}
-	} else if len(missingPorts) == 0 {
+	} else if len(unidentified) == 0 {
 		msg = append(msg, "順位が読めなかったため記録していません。手動で `record` してください。")
 	}
 	w.notify(strings.Join(msg, "\n"))
@@ -230,6 +238,13 @@ func (w *Watcher) Learn(id, label string) error {
 	lbl, err := NormalizeLabel(p.Kind, label)
 	if err != nil {
 		return err
+	}
+	if p.Kind == KindName {
+		pl, err := w.core.GetOrCreatePlayer(lbl)
+		if err != nil {
+			return err
+		}
+		lbl = pl.Name
 	}
 	if err := w.core.AddTemplate(p.Kind, lbl, p.Hash); err != nil {
 		return err

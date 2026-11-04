@@ -77,6 +77,7 @@ type VisionConfig struct {
 	ScreenThreshold int `toml:"screen_threshold"`
 	CharThreshold   int `toml:"char_threshold"`
 	RankThreshold   int `toml:"rank_threshold"`
+	NameThreshold   int `toml:"name_threshold"`
 	// Layouts describe where things are on the results screen, by player count.
 	Layouts []Layout `toml:"layouts"`
 }
@@ -94,6 +95,9 @@ type Slot struct {
 	Port int    `toml:"port"`
 	Char Region `toml:"char"`
 	Rank Region `toml:"rank"`
+	// Name is the player's name tag. It identifies the human directly, so
+	// no port assignment is needed once each member's tag has been learned.
+	Name Region `toml:"name"`
 }
 
 // Layout is the results-screen geometry for one player count.
@@ -111,7 +115,7 @@ func Default() Config {
 		Vision: VisionConfig{
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
 			Width: 640, Height: 360, FPS: 2, StableFrames: 3, CooldownSeconds: 90,
-			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 10,
+			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 10, NameThreshold: 10,
 			Layouts: defaultLayouts(),
 		},
 	}
@@ -129,6 +133,7 @@ func defaultLayouts() []Layout {
 				Port: i + 1,
 				Char: Region{X: x + w*0.15, Y: 0.30, W: w * 0.70, H: 0.35},
 				Rank: Region{X: x + w*0.10, Y: 0.08, W: w * 0.35, H: 0.14},
+				Name: Region{X: x + w*0.10, Y: 0.67, W: w * 0.80, H: 0.08},
 			}
 		}
 		return slots

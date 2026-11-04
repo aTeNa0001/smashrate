@@ -36,16 +36,17 @@ Commands:
   rank [1v1|ffa|team]         print the leaderboard
   stats <name>                print a player's statistics
   history [n]                 print recent matches
-  balance <teams> <names...>  propose balanced teams
-  ports [P1=name P2=name]     show or set controller-port owners
+  balance <teams> <names...> [uneven]
+                              propose balanced teams (2-4 teams, up to 8 players; "uneven" allows unequal sizes)
+  ports [P1=name P2=name]     show or set controller-port owners (fallback when a name tag is not learned yet)
   delete <match-id>           delete a match and recompute
   fix <match-id> <name> <char>  correct a character
   recompute                   rebuild every rating from the match history
   vision devices              list capture devices seen by ffmpeg
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
   vision regions -image f     write crops of every layout region (for tuning smashrate.toml)
-  vision teach -image f -players N -chars a,b -ranks 1,2
-                              learn the results screen + its characters/ranks from a screenshot
+  vision teach -image f -players N -chars a,b -ranks 1,2 -names Taro,Hanako
+                              learn the results screen + its characters/ranks/name tags from a screenshot
   vision test -image f        run the detector on a screenshot and print what it sees
   vision watch                run only the capture watcher (no web server)
 `
@@ -273,8 +274,18 @@ func history(c *core.Core, args []string) error {
 }
 
 func balanceCmd(c *core.Core, args []string) error {
+	uneven := false
+	var rest []string
+	for _, a := range args {
+		if a == "uneven" || a == "-uneven" || a == "--uneven" {
+			uneven = true
+		} else {
+			rest = append(rest, a)
+		}
+	}
+	args = rest
 	if len(args) < 3 {
-		return errors.New("usage: balance <teams> <name> <name> ...")
+		return errors.New("usage: balance <teams 2-4> <name> <name> ... [uneven]")
 	}
 	k, err := strconv.Atoi(args[0])
 	if err != nil {
@@ -284,7 +295,7 @@ func balanceCmd(c *core.Core, args []string) error {
 	if err != nil {
 		return err
 	}
-	props, err := srv.Balance(args[1:], k)
+	props, err := srv.Balance(args[1:], k, uneven)
 	if err != nil {
 		return err
 	}
@@ -295,7 +306,7 @@ func balanceCmd(c *core.Core, args []string) error {
 			for _, m := range team {
 				names = append(names, fmt.Sprintf("%s(%d)", m.Name, m.Rating.Display()))
 			}
-			fmt.Printf("  team %d  %3.0f%%  %s\n", t+1, p.WinProb[t]*100, strings.Join(names, ", "))
+			fmt.Printf("  team %d (%d)  %3.0f%%  %s\n", t+1, len(team), p.WinProb[t]*100, strings.Join(names, ", "))
 		}
 	}
 	return nil
@@ -356,6 +367,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	players := fs.Int("players", 2, "number of players on the results screen")
 	chars := fs.String("chars", "", "comma-separated characters per column (P1,P2,...)")
 	ranks := fs.String("ranks", "", "comma-separated placements per column, e.g. 1,2")
+	names := fs.String("names", "", "comma-separated player names per column (the name tags)")
 	fs.Parse(rest)
 
 	switch sub {
@@ -414,6 +426,9 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 			if err := save(fmt.Sprintf("p%d_rank", s.Port), s.Rank); err != nil {
 				return err
 			}
+			if err := save(fmt.Sprintf("p%d_name", s.Port), s.Name); err != nil {
+				return err
+			}
 		}
 		fmt.Println("wrote crops to", dir)
 		return nil
@@ -425,7 +440,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := vision.Teach(c, cfg.Vision, img, *players, splitCSV(*chars), splitCSV(*ranks)); err != nil {
+		if err := vision.Teach(c, cfg.Vision, img, *players, splitCSV(*chars), splitCSV(*ranks), splitCSV(*names)); err != nil {
 			return err
 		}
 		fmt.Println("learned templates from", *imagePath)
@@ -449,7 +464,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		}
 		fmt.Printf("results screen, %d players\n", r.Players)
 		for _, s := range r.Slots {
-			fmt.Printf("  P%d  char=%-16q (dist %2d)  rank=%d (dist %2d)\n", s.Port, s.Char, s.CharDist, s.Rank, s.RankDist)
+			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist)
 		}
 		return nil
 	case "watch":

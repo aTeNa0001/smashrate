@@ -88,6 +88,8 @@ func TestValidation(t *testing.T) {
 		{e("A", "", 1, 1), e("B", "", 1, 2)},       // inconsistent team rank
 		{e("A", "", 1, 1), e("B", "", 1, 1)},       // single team
 		{e("A", "nosuch", 1, 1), e("B", "", 2, 2)}, // unknown character
+		{e("A", "", 1, 1), e("B", "", 2, 2), e("C", "", 3, 3), e("D", "", 4, 4), e("E", "", 5, 5), e("F", "", 6, 6), e("G", "", 7, 7), e("H", "", 8, 8), e("I", "", 9, 9)}, // 9 players
+		{e("A", "", 1, 1), e("B", "", 1, 1), e("C", "", 2, 2), e("D", "", 3, 3), e("E", "", 4, 4), e("F", "", 5, 5)},                                                       // 5 teams in team battle
 	}
 	for i, in := range cases {
 		if _, err := c.RecordMatch(MatchInput{Entries: in}); err == nil {

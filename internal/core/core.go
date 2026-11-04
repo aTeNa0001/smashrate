@@ -243,9 +243,18 @@ func DetectMode(entries []EntryInput) string {
 	}
 }
 
+// Smash Bros. Ultimate limits.
+const (
+	MaxPlayers = 8
+	MaxTeams   = 4 // in team battle; free-for-all allows up to 8 solo players
+)
+
 func validate(in MatchInput) error {
 	if len(in.Entries) < 2 {
 		return errors.New("a match needs at least two players")
+	}
+	if len(in.Entries) > MaxPlayers {
+		return fmt.Errorf("a match has at most %d players", MaxPlayers)
 	}
 	seen := map[string]bool{}
 	teamRank := map[int]int{}
@@ -271,6 +280,9 @@ func validate(in MatchInput) error {
 	}
 	if len(teamRank) < 2 {
 		return errors.New("a match needs at least two teams")
+	}
+	if DetectMode(in.Entries) == ModeTeam && len(teamRank) > MaxTeams {
+		return fmt.Errorf("a team battle has at most %d teams", MaxTeams)
 	}
 	hasWinner := false
 	for _, r := range teamRank {
