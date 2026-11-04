@@ -43,6 +43,13 @@ Windows のミニPC では `go build -o smashrate.exe ./cmd/smashrate` のあと
 /smash learn char-1234 ピカチュウ  未知画像の学習
 ```
 
+### 外部公開（Cloudflare Tunnel + Access）と簡易ログイン
+
+`[server.auth]` にパスワードを設定すると、記録・削除・ポート設定にログインが必要になります
+（閲覧も守るなら `read_requires_login = true`）。スクリプトからは `Authorization: Bearer <api_token>` で
+書き込めます。ポート開放なしで公開する手順と、Cloudflare Access でメンバーを絞る設定は
+[docs/DEPLOY.md](docs/DEPLOY.md) を参照。常駐化は `deploy/install-task.ps1`、日次バックアップは `deploy/backup.ps1`。
+
 ### キャプチャボード
 
 ffmpeg が必要です（Windows: `winget install Gyan.FFmpeg`）。`smashrate.toml` の `[vision]` を

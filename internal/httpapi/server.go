@@ -14,6 +14,7 @@ import (
 
 	"github.com/aTeNa0001/smashrate/internal/balance"
 	"github.com/aTeNa0001/smashrate/internal/characters"
+	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
 )
 
@@ -25,10 +26,16 @@ type Server struct {
 	core *core.Core
 	tpl  *template.Template
 	mux  *http.ServeMux
+	auth *auth
+}
+
+// Options configures the server.
+type Options struct {
+	Auth config.AuthConfig
 }
 
 // New builds the handler.
-func New(c *core.Core) (*Server, error) {
+func New(c *core.Core, opt Options) (*Server, error) {
 	funcs := template.FuncMap{
 		"pct": func(f float64) string { return fmt.Sprintf("%.0f%%", f*100) },
 		"f1":  func(f float64) string { return fmt.Sprintf("%.1f", f) },
@@ -74,7 +81,7 @@ func New(c *core.Core) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux()}
+	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth)}
 	s.routes()
 	return s, nil
 }
@@ -92,9 +99,17 @@ func modeName(m string) string {
 }
 
 // ServeHTTP implements http.Handler.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.requireLogin(w, r) {
+		return
+	}
+	s.mux.ServeHTTP(w, r)
+}
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("GET /login", s.loginForm)
+	s.mux.HandleFunc("POST /login", s.loginSubmit)
+	s.mux.HandleFunc("POST /logout", s.logout)
 	s.mux.HandleFunc("GET /{$}", s.index)
 	s.mux.HandleFunc("GET /players/{name}", s.player)
 	s.mux.HandleFunc("GET /matches", s.matches)
@@ -118,11 +133,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 }
 
-func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
+func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
 	if data == nil {
 		data = map[string]any{}
 	}
 	data["Page"] = name
+	data["AuthEnabled"] = s.auth.enabled()
+	data["LoggedIn"] = s.auth.enabled() && s.auth.loggedIn(r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tpl.ExecuteTemplate(w, name+".html", data); err != nil {
 		log.Printf("render %s: %v", name, err)
@@ -149,7 +166,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	recent, _ := s.core.Matches(10, 0)
 	usage, _ := s.core.CharacterUsage()
-	s.render(w, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage})
+	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage})
 }
 
 func (s *Server) player(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +175,7 @@ func (s *Server) player(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.render(w, "player", map[string]any{"S": st})
+	s.render(w, r, "player", map[string]any{"S": st})
 }
 
 func (s *Server) matches(w http.ResponseWriter, r *http.Request) {
@@ -171,12 +188,12 @@ func (s *Server) matches(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	s.render(w, "matches", map[string]any{"Matches": ms, "Page": page, "Next": page + 1, "Prev": page - 1})
+	s.render(w, r, "matches", map[string]any{"Matches": ms, "Page": page, "Next": page + 1, "Prev": page - 1})
 }
 
 func (s *Server) recordForm(w http.ResponseWriter, r *http.Request) {
 	players, _ := s.core.Players()
-	s.render(w, "record", map[string]any{"Players": players, "Characters": characters.All, "Error": r.URL.Query().Get("error")})
+	s.render(w, r, "record", map[string]any{"Players": players, "Characters": characters.All, "Error": r.URL.Query().Get("error")})
 }
 
 func (s *Server) recordSubmit(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +234,7 @@ func (s *Server) deleteMatch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) balanceForm(w http.ResponseWriter, r *http.Request) {
 	players, _ := s.core.Players()
-	s.render(w, "balance", map[string]any{"Players": players, "Teams": 2})
+	s.render(w, r, "balance", map[string]any{"Players": players, "Teams": 2})
 }
 
 func (s *Server) balanceSubmit(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +253,7 @@ func (s *Server) balanceSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data["Error"] = err.Error()
 	}
-	s.render(w, "balance", data)
+	s.render(w, r, "balance", data)
 }
 
 // Balance resolves names to ratings and proposes team splits.
@@ -265,7 +282,7 @@ func (s *Server) ports(w http.ResponseWriter, r *http.Request) {
 	for _, p := range ps {
 		byPort[p.Port] = p.Player.Name
 	}
-	s.render(w, "ports", map[string]any{"ByPort": byPort, "Players": players})
+	s.render(w, r, "ports", map[string]any{"ByPort": byPort, "Players": players})
 }
 
 func (s *Server) portsSubmit(w http.ResponseWriter, r *http.Request) {

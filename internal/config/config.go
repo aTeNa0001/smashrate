@@ -21,8 +21,29 @@ type ServerConfig struct {
 	Database string `toml:"database"`
 	DataDir  string `toml:"data_dir"`
 	// BaseURL is used in Slack messages to link to the web UI.
-	BaseURL string `toml:"base_url"`
+	BaseURL string     `toml:"base_url"`
+	Auth    AuthConfig `toml:"auth"`
 }
+
+// AuthConfig is the web UI's simple login. With an empty password every
+// request is allowed (LAN-only use). With a password, writes (recording,
+// deleting, ports) require a login; reads too if ReadRequiresLogin.
+type AuthConfig struct {
+	Password string `toml:"password"`
+	// APIToken lets scripts call write endpoints with "Authorization: Bearer <token>".
+	APIToken string `toml:"api_token"`
+	// ReadRequiresLogin also protects every page and GET endpoint.
+	ReadRequiresLogin bool `toml:"read_requires_login"`
+	// TrustCloudflareAccess treats a request carrying the
+	// Cf-Access-Authenticated-User-Email header (set by Cloudflare Access after
+	// the user signed in) as logged in. Only enable when port 8080 is not
+	// reachable except through the tunnel, because the header can be forged
+	// by anyone who can reach the port directly.
+	TrustCloudflareAccess bool `toml:"trust_cloudflare_access"`
+}
+
+// Enabled reports whether any login is configured.
+func (a AuthConfig) Enabled() bool { return a.Password != "" }
 
 // SlackConfig enables the Socket Mode bot.
 type SlackConfig struct {

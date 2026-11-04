@@ -52,6 +52,7 @@ canvas { width:100%; height:auto; background:var(--surface); border:1px solid va
   <a href="/record" {{if eq .Page "record"}}class="on"{{end}}>手動記録</a>
   <a href="/balance" {{if eq .Page "balance"}}class="on"{{end}}>チーム分け</a>
   <a href="/ports" {{if eq .Page "ports"}}class="on"{{end}}>ポート設定</a>
+  {{if .AuthEnabled}}<span style="margin-left:auto">{{if .LoggedIn}}<form method="post" action="/logout" style="display:inline"><button class="ghost" type="submit">ログアウト</button></form>{{else}}<a href="/login">ログイン</a>{{end}}</span>{{end}}
 </nav>
 <main>
 {{end}}

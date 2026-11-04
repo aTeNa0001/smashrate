@@ -1,0 +1,10 @@
+# cloudflared configuration for smashrate.
+# Windows: C:\Users\<you>\.cloudflared\config.yml   Linux: /etc/cloudflared/config.yml
+# Replace <TUNNEL-ID> and the hostname, then: cloudflared tunnel run smashrate
+tunnel: <TUNNEL-ID>
+credentials-file: C:\Users\<you>\.cloudflared\<TUNNEL-ID>.json
+
+ingress:
+  - hostname: smash.example.com
+    service: http://localhost:8080
+  - service: http_status:404

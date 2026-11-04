@@ -4,8 +4,19 @@
 addr = ":8080"
 database = "data/smashrate.db"
 data_dir = "data"
-# Used in Slack messages to link to the web UI (LAN address of the mini PC).
+# Used in Slack messages to link to the web UI (LAN address, or the public hostname
+# when published through Cloudflare Tunnel; see docs/DEPLOY.md).
 base_url = "http://192.168.1.50:8080"
+
+[server.auth]
+# Empty password = no login (LAN-only use). With a password, recording, deleting
+# and port changes require a login; set read_requires_login to protect pages too.
+password = ""
+api_token = ""
+read_requires_login = false
+# Trust Cloudflare Access's Cf-Access-Authenticated-User-Email header as a login.
+# Only with addr = "127.0.0.1:8080" so the port is reachable through the tunnel alone.
+trust_cloudflare_access = false
 
 [slack]
 enabled = false

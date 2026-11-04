@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
 )
 
@@ -17,11 +18,92 @@ func newTestServer(t *testing.T) (*Server, *core.Core) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	s, err := New(c)
+	s, err := New(c, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s, c
+}
+
+func TestAuthGatesWrites(t *testing.T) {
+	c, err := core.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	s, err := New(c, Options{Auth: config.AuthConfig{Password: "secret", APIToken: "tok", TrustCloudflareAccess: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := func() *strings.Reader {
+		return strings.NewReader(`{"entries":[{"player":"A","team":1,"rank":1},{"player":"B","team":2,"rank":2}]}`)
+	}
+
+	// reads are open, API writes are 401, form writes redirect to /login
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "ログイン") {
+		t.Fatalf("index without login: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("POST", "/api/matches", body()))
+	if rec.Code != 401 {
+		t.Fatalf("api write without login: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/record", strings.NewReader("p1_name=A&p1_team=1&p1_rank=1&p2_name=B&p2_team=2&p2_rank=2"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/login") {
+		t.Fatalf("form write without login: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+
+	// bearer token works
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/api/matches", body())
+	req.Header.Set("Authorization", "Bearer tok")
+	s.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("api write with token: %d %s", rec.Code, rec.Body)
+	}
+
+	// Cloudflare Access header works when trusted
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("DELETE", "/api/matches/1", nil)
+	req.Header.Set("Cf-Access-Authenticated-User-Email", "someone@example.com")
+	s.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("delete via access header: %d %s", rec.Code, rec.Body)
+	}
+
+	// wrong password rejected, right password sets a cookie that unlocks writes
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/login", strings.NewReader("password=wrong&next=/record"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	s.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Header().Get("Location"), "error=1") || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("wrong password: %s", rec.Header().Get("Location"))
+	}
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/login", strings.NewReader("password=secret&next=/record"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	s.ServeHTTP(rec, req)
+	cookies := rec.Result().Cookies()
+	if rec.Header().Get("Location") != "/record" || len(cookies) != 1 {
+		t.Fatalf("login: %d %s cookies=%d", rec.Code, rec.Header().Get("Location"), len(cookies))
+	}
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/api/matches", body())
+	req.AddCookie(cookies[0])
+	s.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("api write with cookie: %d %s", rec.Code, rec.Body)
+	}
+
+	// open redirect is neutralised
+	if safeNext("//evil.example") != "/" || safeNext("https://evil") != "/" || safeNext("/matches") != "/matches" {
+		t.Fatal("safeNext")
+	}
 }
 
 func TestAPIRecordAndPages(t *testing.T) {

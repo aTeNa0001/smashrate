@@ -1,0 +1,10 @@
+{{template "header" .}}
+<h1>ログイン</h1>
+<p class="muted">記録・削除・ポート設定にはパスワードが必要です。</p>
+{{if .Error}}<div class="err">パスワードが違います。</div>{{end}}
+<form method="post" action="/login" class="row">
+<input type="hidden" name="next" value="{{.Next}}">
+<label>パスワード <input id="password" name="password" type="password" autocomplete="current-password" autofocus></label>
+<button type="submit">ログイン</button>
+</form>
+{{template "footer" .}}

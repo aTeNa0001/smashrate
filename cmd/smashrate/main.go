@@ -120,9 +120,14 @@ func serve(cfg config.Config, c *core.Core) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := httpapi.New(c)
+	srv, err := httpapi.New(c, httpapi.Options{Auth: cfg.Server.Auth})
 	if err != nil {
 		return err
+	}
+	if cfg.Server.Auth.Enabled() {
+		log.Printf("web login enabled (read_requires_login=%v, trust_cloudflare_access=%v)", cfg.Server.Auth.ReadRequiresLogin, cfg.Server.Auth.TrustCloudflareAccess)
+	} else {
+		log.Printf("web login disabled: anyone who can reach %s can record and delete", cfg.Server.Addr)
 	}
 
 	var watcher *vision.Watcher
@@ -275,7 +280,7 @@ func balanceCmd(c *core.Core, args []string) error {
 	if err != nil {
 		return err
 	}
-	srv, err := httpapi.New(c)
+	srv, err := httpapi.New(c, httpapi.Options{})
 	if err != nil {
 		return err
 	}
