@@ -122,25 +122,38 @@ func Default() Config {
 }
 
 // defaultLayouts are starting-point geometries for Smash Ultimate's results
-// screen (16:9). They are meant to be tuned with `smashrate vision snapshot`.
+// screen (16:9): one column per player for 2-4 players, two rows of up to
+// four columns for 5-8 players. They are meant to be tuned with
+// `smashrate vision regions` against a real screenshot.
 func defaultLayouts() []Layout {
-	col := func(n int) []Slot {
-		slots := make([]Slot, n)
-		w := 1.0 / float64(n)
-		for i := 0; i < n; i++ {
-			x := float64(i) * w
-			slots[i] = Slot{
-				Port: i + 1,
-				Char: Region{X: x + w*0.15, Y: 0.30, W: w * 0.70, H: 0.35},
-				Rank: Region{X: x + w*0.10, Y: 0.08, W: w * 0.35, H: 0.14},
-				Name: Region{X: x + w*0.10, Y: 0.67, W: w * 0.80, H: 0.08},
-			}
+	// column i of cols within a band spanning [y0, y0+h) of the frame
+	cell := func(port, i, cols int, y0, h float64) Slot {
+		w := 1.0 / float64(cols)
+		x := float64(i) * w
+		return Slot{
+			Port: port,
+			Rank: Region{X: x + w*0.10, Y: y0 + h*0.08, W: w * 0.35, H: h * 0.14},
+			Char: Region{X: x + w*0.15, Y: y0 + h*0.30, W: w * 0.70, H: h * 0.35},
+			Name: Region{X: x + w*0.10, Y: y0 + h*0.67, W: w * 0.80, H: h * 0.08},
 		}
-		return slots
 	}
 	var out []Layout
-	for n := 2; n <= 4; n++ {
-		out = append(out, Layout{Players: n, Screen: Region{X: 0.0, Y: 0.86, W: 1.0, H: 0.14}, Slots: col(n)})
+	for n := 2; n <= 8; n++ {
+		var slots []Slot
+		if n <= 4 {
+			for i := 0; i < n; i++ {
+				slots = append(slots, cell(i+1, i, n, 0, 0.86))
+			}
+		} else {
+			top := (n + 1) / 2
+			for i := 0; i < top; i++ {
+				slots = append(slots, cell(i+1, i, top, 0, 0.43))
+			}
+			for i := 0; i < n-top; i++ {
+				slots = append(slots, cell(top+i+1, i, n-top, 0.43, 0.43))
+			}
+		}
+		out = append(out, Layout{Players: n, Screen: Region{X: 0.0, Y: 0.86, W: 1.0, H: 0.14}, Slots: slots})
 	}
 	return out
 }

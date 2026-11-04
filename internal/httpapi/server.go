@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,14 @@ func New(c *core.Core, opt Options) (*Server, error) {
 		"hasPrefix": strings.HasPrefix,
 		"inc":       func(i int) int { return i + 1 },
 		"mul":       func(a, b int) int { return a * b },
+		"sub":       func(a, b int) int { return a - b },
+		// the edit form has 8 fixed rows; rows past the entries are blank
+		"entryAt": func(entries []core.Entry, i int) *core.Entry {
+			if i < 0 || i >= len(entries) {
+				return nil
+			}
+			return &entries[i]
+		},
 		"div": func(a, b int) float64 {
 			if b == 0 {
 				return 0
@@ -116,6 +125,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /record", s.recordForm)
 	s.mux.HandleFunc("POST /record", s.recordSubmit)
 	s.mux.HandleFunc("POST /matches/{id}/delete", s.deleteMatch)
+	s.mux.HandleFunc("GET /matches/{id}/edit", s.editForm)
+	s.mux.HandleFunc("POST /matches/{id}/edit", s.editSubmit)
 	s.mux.HandleFunc("GET /balance", s.balanceForm)
 	s.mux.HandleFunc("POST /balance", s.balanceSubmit)
 	s.mux.HandleFunc("GET /ports", s.ports)
@@ -126,6 +137,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/matches", s.apiMatches)
 	s.mux.HandleFunc("POST /api/matches", s.apiRecord)
 	s.mux.HandleFunc("DELETE /api/matches/{id}", s.apiDelete)
+	s.mux.HandleFunc("PUT /api/matches/{id}", s.apiUpdate)
 	s.mux.HandleFunc("POST /api/balance", s.apiBalance)
 	s.mux.HandleFunc("GET /api/ports", s.apiPorts)
 	s.mux.HandleFunc("PUT /api/ports/{port}", s.apiSetPort)
@@ -158,15 +170,87 @@ func writeErr(w http.ResponseWriter, status int, err error) {
 
 // ---------- pages ----------
 
+// scopeOption is one entry of the ranking selector.
+type scopeOption struct {
+	Scope string
+	Label string
+}
+
+func (s *Server) scopeOptions() []scopeOption {
+	opts := []scopeOption{
+		{core.ScopeOverall, "総合"},
+		{core.ScopeMode(core.Mode1v1), "1on1"},
+		{core.ScopeMode(core.ModeFFA), "乱闘"},
+		{core.ScopeMode(core.ModeTeam), "チーム"},
+	}
+	usage, _ := s.core.CharacterUsage()
+	for _, u := range usage {
+		opts = append(opts, scopeOption{core.ScopeChar(u.Key), u.Name})
+	}
+	return opts
+}
+
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	lb, err := s.core.Leaderboard(core.ScopeOverall)
+	scope := r.URL.Query().Get("scope")
+	if scope == "" {
+		scope = core.ScopeOverall
+	}
+	lb, err := s.core.Leaderboard(scope)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	recent, _ := s.core.Matches(10, 0)
 	usage, _ := s.core.CharacterUsage()
-	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage})
+	label := scope
+	opts := s.scopeOptions()
+	for _, o := range opts {
+		if o.Scope == scope {
+			label = o.Label
+		}
+	}
+	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage, "Scope": scope, "ScopeLabel": label, "Scopes": opts})
+}
+
+func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	m, err := s.core.MatchByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	players, _ := s.core.Players()
+	s.render(w, r, "edit", map[string]any{"M": m, "Players": players, "Characters": characters.All, "Error": r.URL.Query().Get("error")})
+}
+
+func (s *Server) editSubmit(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	in := core.MatchInput{Note: r.FormValue("note"), Entries: entriesFromForm(r)}
+	if err := s.core.UpdateMatch(id, in); err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/matches/%d/edit?error=%s", id, url.QueryEscape(err.Error())), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/matches#m%d", id), http.StatusSeeOther)
+}
+
+// entriesFromForm reads the 8-row participant table shared by /record and /edit.
+func entriesFromForm(r *http.Request) []core.EntryInput {
+	var out []core.EntryInput
+	for i := 1; i <= 8; i++ {
+		name := strings.TrimSpace(r.FormValue(fmt.Sprintf("p%d_name", i)))
+		if name == "" {
+			continue
+		}
+		team, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("p%d_team", i)))
+		rank, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("p%d_rank", i)))
+		port, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("p%d_port", i)))
+		out = append(out, core.EntryInput{Player: name, Character: r.FormValue(fmt.Sprintf("p%d_char", i)), Team: team, Rank: rank, Port: port})
+	}
+	return out
 }
 
 func (s *Server) player(w http.ResponseWriter, r *http.Request) {
@@ -201,23 +285,10 @@ func (s *Server) recordSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	var in core.MatchInput
-	in.Source = "web"
-	in.Note = r.FormValue("note")
-	for i := 1; i <= 8; i++ {
-		name := strings.TrimSpace(r.FormValue(fmt.Sprintf("p%d_name", i)))
-		if name == "" {
-			continue
-		}
-		team, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("p%d_team", i)))
-		rank, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("p%d_rank", i)))
-		in.Entries = append(in.Entries, core.EntryInput{
-			Player: name, Character: r.FormValue(fmt.Sprintf("p%d_char", i)), Team: team, Rank: rank,
-		})
-	}
+	in := core.MatchInput{Source: "web", Note: r.FormValue("note"), Entries: entriesFromForm(r)}
 	m, err := s.core.RecordMatch(in)
 	if err != nil {
-		http.Redirect(w, r, "/record?error="+err.Error(), http.StatusSeeOther)
+		http.Redirect(w, r, "/record?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/matches#m%d", m.ID), http.StatusSeeOther)
@@ -398,6 +469,37 @@ func (s *Server) apiRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 201, m)
+}
+
+func (s *Server) apiUpdate(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	var in apiMatchIn
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	mi := core.MatchInput{Note: in.Note}
+	if in.PlayedAt != "" {
+		t, err := time.Parse(time.RFC3339, in.PlayedAt)
+		if err != nil {
+			writeErr(w, 400, fmt.Errorf("played_at: %w", err))
+			return
+		}
+		mi.PlayedAt = t
+	}
+	for _, e := range in.Entries {
+		mi.Entries = append(mi.Entries, core.EntryInput{Player: e.Player, Character: e.Character, Team: e.Team, Rank: e.Rank, Port: e.Port, Stocks: e.Stocks})
+	}
+	if err := s.core.UpdateMatch(id, mi); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	m, err := s.core.MatchByID(id)
+	if err != nil {
+		writeErr(w, 404, err)
+		return
+	}
+	writeJSON(w, 200, m)
 }
 
 func (s *Server) apiDelete(w http.ResponseWriter, r *http.Request) {

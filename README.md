@@ -75,10 +75,11 @@ docs/VISION.md        OCR と他方式の比較、採用理由、調整手順
 
 | Method | Path | 内容 |
 |---|---|---|
-| GET | /api/leaderboard?scope=overall\|mode:1v1\|char:mario | ランキング |
+| GET | /api/leaderboard?scope=overall\|mode:1v1\|char:mario | ランキング（Web の `/?scope=` も同じ値） |
 | GET | /api/players/{name} | 個人成績 |
 | GET | /api/matches?limit=&offset= | 対戦履歴 |
 | POST | /api/matches | `{"entries":[{"player":"A","character":"mario","team":1,"rank":1},...]}` |
+| PUT | /api/matches/{id} | 参加者・順位・キャラを差し替えて再計算（本文は POST と同じ） |
 | DELETE | /api/matches/{id} | 削除して再計算 |
 | POST | /api/balance | `{"members":["A","B","C","D"],"teams":2,"allow_uneven":false}` |
 | GET / PUT | /api/ports, /api/ports/{port} | ポート設定 |

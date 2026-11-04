@@ -520,6 +520,59 @@ func (c *Core) DeleteMatch(id int64) error {
 	return c.Recompute()
 }
 
+// UpdateMatch replaces a match's participants (players, characters, teams,
+// ranks) and optionally its note, then recomputes every rating.
+func (c *Core) UpdateMatch(id int64, in MatchInput) error {
+	if err := validate(in); err != nil {
+		return err
+	}
+	tx, err := c.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var deleted int
+	if err := tx.QueryRow(`SELECT deleted FROM matches WHERE id = ?`, id).Scan(&deleted); err != nil {
+		return fmt.Errorf("match %d not found", id)
+	}
+	if deleted != 0 {
+		return fmt.Errorf("match %d is deleted", id)
+	}
+	if _, err := tx.Exec(`UPDATE matches SET mode = ?, note = ? WHERE id = ?`, DetectMode(in.Entries), in.Note, id); err != nil {
+		return err
+	}
+	if !in.PlayedAt.IsZero() {
+		if _, err := tx.Exec(`UPDATE matches SET played_at = ? WHERE id = ?`, in.PlayedAt.UTC().Format(time.RFC3339), id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM entries WHERE match_id = ?`, id); err != nil {
+		return err
+	}
+	for _, e := range in.Entries {
+		p, err := getOrCreatePlayerTx(tx, e.Player)
+		if err != nil {
+			return err
+		}
+		charKey := ""
+		if strings.TrimSpace(e.Character) != "" {
+			ch, ok := characters.Resolve(e.Character)
+			if !ok {
+				return fmt.Errorf("unknown character %q", e.Character)
+			}
+			charKey = ch.Key
+		}
+		if _, err := tx.Exec(`INSERT INTO entries(match_id, player_id, character, team, rank, port, stocks) VALUES(?,?,?,?,?,?,?)`,
+			id, p.ID, charKey, e.Team, e.Rank, e.Port, e.Stocks); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return c.Recompute()
+}
+
 // UpdateEntryCharacter corrects the character of one participant and recomputes.
 func (c *Core) UpdateEntryCharacter(matchID int64, player string, character string) error {
 	p, err := c.PlayerByName(player)

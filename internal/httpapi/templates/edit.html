@@ -1,0 +1,26 @@
+{{template "header" .}}
+{{$m := .M}}
+<h1>対戦 #{{$m.ID}} の編集 <span class="muted" style="font-size:15px;font-weight:400">{{date $m.PlayedAt}} · {{modeName $m.Mode}} · {{$m.Source}}</span></h1>
+<p class="muted">プレイヤー・キャラ・チーム・順位を直すと、全員のレートが履歴から再計算されます。行を空にするとその参加者は外れます。</p>
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+<form method="post" action="/matches/{{$m.ID}}/edit">
+<datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
+<datalist id="chars">{{range .Characters}}<option value="{{.NameJA}}">{{.NameEN}}</option>{{end}}</datalist>
+<div class="wrap"><table>
+<tr><th>#</th><th>プレイヤー</th><th>キャラ</th><th>チーム</th><th>順位</th><th>ポート</th></tr>
+{{range $i := seq 8}}{{$e := entryAt $m.Entries (sub $i 1)}}<tr>
+<td class="muted">{{$i}}</td>
+<td><input name="p{{$i}}_name" list="players" value="{{with $e}}{{.PlayerName}}{{end}}" autocomplete="off"></td>
+<td><input name="p{{$i}}_char" list="chars" value="{{with $e}}{{.CharacterName}}{{end}}" placeholder="任意" autocomplete="off"></td>
+<td><input name="p{{$i}}_team" type="number" min="1" max="8" value="{{with $e}}{{.Team}}{{else}}{{$i}}{{end}}" style="width:5em"></td>
+<td><input name="p{{$i}}_rank" type="number" min="1" max="8" value="{{with $e}}{{.Rank}}{{else}}{{$i}}{{end}}" style="width:5em"></td>
+<td><input name="p{{$i}}_port" type="number" min="0" max="8" value="{{with $e}}{{.Port}}{{else}}0{{end}}" style="width:5em"></td>
+</tr>{{end}}
+</table></div>
+<div class="row" style="margin-top:12px">
+  <label>メモ <input name="note" value="{{$m.Note}}" style="min-width:260px"></label>
+  <button type="submit">保存して再計算</button>
+  <a href="/matches" class="muted">戻る</a>
+</div>
+</form>
+{{template "footer" .}}

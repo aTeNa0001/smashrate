@@ -169,6 +169,51 @@ func TestAPIBalanceAndPorts(t *testing.T) {
 	}
 }
 
+func TestEditAndScopes(t *testing.T) {
+	s, c := newTestServer(t)
+	m, err := c.RecordMatch(core.MatchInput{Entries: []core.EntryInput{{Player: "A", Character: "mario", Team: 1, Rank: 1}, {Player: "B", Team: 2, Rank: 2}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/matches/1/edit", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `value="マリオ"`) {
+		t.Fatalf("edit form: %d %s", rec.Code, rec.Body)
+	}
+	req := httptest.NewRequest("POST", "/matches/1/edit", strings.NewReader("p1_name=A&p1_char=&p1_team=1&p1_rank=2&p2_name=B&p2_char=link&p2_team=2&p2_rank=1&note=swapped"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/matches") || strings.Contains(rec.Header().Get("Location"), "error") {
+		t.Fatalf("edit submit: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	got, _ := c.MatchByID(m.ID)
+	if got.Winners()[0] != "B" || got.Note != "swapped" {
+		t.Fatalf("after edit: %+v", got)
+	}
+
+	// JSON update
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("PUT", "/api/matches/1", strings.NewReader(`{"entries":[{"player":"A","team":1,"rank":1},{"player":"B","team":2,"rank":2}]}`)))
+	if rec.Code != 200 {
+		t.Fatalf("api update: %d %s", rec.Code, rec.Body)
+	}
+
+	// ranking scope selector
+	for _, scope := range []string{"", "mode:1v1", "char:link", "mode:ffa"} {
+		rec = httptest.NewRecorder()
+		s.ServeHTTP(rec, httptest.NewRequest("GET", "/?scope="+scope, nil))
+		if rec.Code != 200 {
+			t.Fatalf("scope %q: %d", scope, rec.Code)
+		}
+	}
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/?scope=mode:ffa", nil))
+	if strings.Contains(rec.Body.String(), `<td class="n"><b>`) {
+		t.Fatal("ffa ranking should be empty")
+	}
+}
+
 func TestFormRecord(t *testing.T) {
 	s, c := newTestServer(t)
 	form := "p1_name=A&p1_char=&p1_team=1&p1_rank=1&p2_name=B&p2_team=2&p2_rank=2&p3_name=C&p3_team=3&p3_rank=3"

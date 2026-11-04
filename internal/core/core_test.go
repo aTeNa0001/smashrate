@@ -164,6 +164,33 @@ func TestUpdateEntryCharacter(t *testing.T) {
 	}
 }
 
+func TestUpdateMatch(t *testing.T) {
+	c := openTest(t)
+	m, err := c.RecordMatch(MatchInput{Entries: []EntryInput{e("A", "mario", 1, 1), e("B", "link", 2, 2)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// swap the result and add a third player: becomes a 3-player FFA won by B
+	if err := c.UpdateMatch(m.ID, MatchInput{Note: "fixed", Entries: []EntryInput{e("A", "mario", 1, 2), e("B", "link", 2, 1), e("C", "", 3, 3)}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := c.MatchByID(m.ID)
+	if got.Mode != ModeFFA || got.Note != "fixed" || len(got.Entries) != 3 || got.Winners()[0] != "B" {
+		t.Fatalf("%+v", got)
+	}
+	a, _ := c.PlayerByName("A")
+	b, _ := c.PlayerByName("B")
+	if c.PlayerRating(a.ID, ScopeOverall).Display >= c.PlayerRating(b.ID, ScopeOverall).Display {
+		t.Fatal("ratings should follow the corrected result")
+	}
+	if c.PlayerRating(a.ID, ScopeMode(Mode1v1)).Games != 0 {
+		t.Fatal("old 1v1 scope should be gone after recompute")
+	}
+	if err := c.UpdateMatch(999, MatchInput{Entries: []EntryInput{e("A", "", 1, 1), e("B", "", 2, 2)}}); err == nil {
+		t.Fatal("missing match should fail")
+	}
+}
+
 func TestPortsAndTemplates(t *testing.T) {
 	c := openTest(t)
 	if err := c.SetPort(1, "A"); err != nil {

@@ -1,6 +1,10 @@
 {{template "header" .}}
-<h1>ランキング</h1>
-{{if not .Leaderboard}}<p class="muted">まだ対戦が記録されていません。<a href="/record">手動記録</a>から始めるか、キャプチャ監視を有効にしてください。</p>{{end}}
+<h1>ランキング <span class="muted" style="font-size:15px;font-weight:400">{{.ScopeLabel}}</span></h1>
+<form method="get" action="/" class="row" style="margin-bottom:12px">
+  <label>表示するレート <select id="scope" name="scope" onchange="this.form.submit()">{{$cur := .Scope}}{{range .Scopes}}<option value="{{.Scope}}" {{if eq .Scope $cur}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+  <noscript><button type="submit">表示</button></noscript>
+</form>
+{{if not .Leaderboard}}<p class="muted">このレートにはまだ対戦が記録されていません。<a href="/record">手動記録</a>から始めるか、キャプチャ監視を有効にしてください。</p>{{end}}
 <div class="wrap"><table>
 <tr><th class="n">#</th><th>プレイヤー</th><th class="n">レート</th><th class="n">試合</th><th class="n">勝</th><th class="n">勝率</th><th class="n">μ</th><th class="n">σ</th></tr>
 {{range $i, $r := .Leaderboard}}<tr>
