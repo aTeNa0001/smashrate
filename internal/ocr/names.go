@@ -1,6 +1,7 @@
 package ocr
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -26,6 +27,16 @@ func NormalizeName(text string) string {
 		}
 	}
 	return ""
+}
+
+var placeholderTag = regexp.MustCompile(`(?i)^(p|player|プレイヤー|cpu|com)[ -]?[1-8]?$`)
+
+// IsPlaceholder reports whether an OCR'd tag is the game's default label
+// (P1, Player 2, CPU, ...) rather than a person's name. This happens on a
+// console where no name tag was chosen; such a player must not be registered.
+func IsPlaceholder(text string) bool {
+	n := NormalizeName(text)
+	return n == "" || placeholderTag.MatchString(n)
 }
 
 // Levenshtein is the edit distance between two strings in runes.

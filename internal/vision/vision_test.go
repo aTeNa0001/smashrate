@@ -260,6 +260,19 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	if p := w.Pending(); len(p) != 1 {
 		t.Fatalf("pending = %v", p)
 	}
+
+	// a console without a name tag shows "P2": never registered as a player
+	f4 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 77)
+	l4, _ := cfg.Layout(2, "")
+	cr := Crop(f4, Rect(f4.Bounds(), l4.Slots[1].Name))
+	fake.byHash[DHash(cr, cr.Bounds())] = "P 2"
+	w.Process(f4)
+	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
+		t.Fatal("placeholder tag must block recording")
+	}
+	if _, err := c.PlayerByName("P2"); err == nil {
+		t.Fatal("placeholder tag must not create a player")
+	}
 }
 
 func TestTeamBattleResultsScreen(t *testing.T) {

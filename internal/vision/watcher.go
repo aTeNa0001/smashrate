@@ -82,7 +82,8 @@ func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created b
 		return "", false
 	}
 	clean := ocr.NormalizeName(text)
-	if clean == "" {
+	if ocr.IsPlaceholder(clean) {
+		// "P1" / "CPU": a console without a name tag chosen. Not a person.
 		return "", false
 	}
 	players, _ := w.core.Players()
@@ -209,7 +210,7 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		msg = append(msg, fmt.Sprintf("新しいプレイヤーを登録しました: %s（読み間違いなら `rename <今の名前> <正しい名前>`、既存の人なら `merge <今の名前> <既存の名前>`）", strings.Join(newcomers, ", ")))
 	}
 	if len(unidentified) > 0 {
-		msg = append(msg, fmt.Sprintf("列 %v のプレイヤーを特定できなかったため記録していません。名前タグを `learn <画像ID> <名前>` で教えると次回から自動で判別します。", unidentified))
+		msg = append(msg, fmt.Sprintf("列 %v のプレイヤーを特定できなかったため記録していません（名前タグ未設定の P1/P2 表示や CPU も対象外です）。本人のタグなら `learn <画像ID> <名前>` で教えると次回から自動で判別します。", unidentified))
 	}
 	if len(unknown) > 0 {
 		msg = append(msg, "未知の画像があります。`learn <画像ID> <ラベル>` で教えてください:\n  "+strings.Join(unknown, "\n  "))

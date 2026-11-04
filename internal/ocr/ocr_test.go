@@ -42,6 +42,19 @@ func TestMatchName(t *testing.T) {
 	}
 }
 
+func TestIsPlaceholder(t *testing.T) {
+	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", ""} {
+		if !IsPlaceholder(s) {
+			t.Fatalf("%q should be a placeholder", s)
+		}
+	}
+	for _, s := range []string{"Paul", "たろう", "P1X", "cpuman", "Hanako"} {
+		if IsPlaceholder(s) {
+			t.Fatalf("%q should be a real name", s)
+		}
+	}
+}
+
 func TestLevenshtein(t *testing.T) {
 	if Levenshtein("kitten", "sitting") != 3 || Levenshtein("", "abc") != 3 || Levenshtein("abc", "abc") != 0 {
 		t.Fatal("levenshtein")
