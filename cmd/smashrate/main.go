@@ -36,6 +36,7 @@ Usage:
 
 Commands:
   version                     print the build version
+  doctor                      check that everything the config needs is available (ffmpeg, device, OCR, Slack, ...)
   serve                       run web UI / API (+ Slack bot and capture watcher if enabled)
   record "A:mario > B:link"   record a match (same syntax as Slack)
   rank [1v1|ffa|team]         print the leaderboard
@@ -93,6 +94,8 @@ func main() {
 	switch flag.Arg(0) {
 	case "serve":
 		err = serve(cfg, c)
+	case "doctor":
+		err = doctor(*cfgPath, cfg, c)
 	case "record":
 		err = record(c, strings.Join(args, " "))
 	case "rank":

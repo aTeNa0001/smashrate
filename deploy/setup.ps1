@@ -84,7 +84,11 @@ if ($NoTask) {
     schtasks /Create /F /TN smashrate-backup /SC DAILY /ST 04:00 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Dir\backup.ps1`"" | Out-Null
 }
 
-Write-Host "== 5/5 next steps" -ForegroundColor Cyan
+Write-Host "== 5/5 doctor" -ForegroundColor Cyan
+Push-Location $Dir
+try { & $exe doctor } catch { } finally { Pop-Location }
+
+Write-Host "== next steps" -ForegroundColor Cyan
 @"
 Installed to $Dir. Web UI: http://localhost:8080  (health: http://localhost:8080/healthz)
 
@@ -95,6 +99,7 @@ Remaining manual steps:
        [slack]       enabled = true, bot_token / app_token / channel
        [vision]      enabled = true, input = "video=<device>"  (list devices: smashrate vision devices)
      then restart:  schtasks /End /TN smashrate ; schtasks /Run /TN smashrate
+     and re-check:  cd $Dir ; .\smashrate.exe doctor
   2. Cloudflare Tunnel (see docs/DEPLOY.md):
        cloudflared tunnel login
        cloudflared tunnel create smashrate
