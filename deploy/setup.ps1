@@ -32,15 +32,22 @@ $ErrorActionPreference = "Stop"
 
 function Have($cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 function RefreshPath { $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User") }
-function WingetInstall($id) { winget install --id $id -e --accept-source-agreements --accept-package-agreements --silent | Out-Null; RefreshPath }
+function WingetInstall($id) {
+    Write-Host "   installing $id (winget; this downloads 50-150 MB, progress below)" -ForegroundColor DarkGray
+    winget install --id $id -e --source winget --accept-source-agreements --accept-package-agreements --disable-interactivity
+    if ($LASTEXITCODE -ne 0) { Write-Warning "winget exited with $LASTEXITCODE for $id" }
+    RefreshPath
+}
 
 Write-Host "== 1/5 tools" -ForegroundColor Cyan
 if (-not (Have winget)) { throw "winget not found; install 'App Installer' from the Microsoft Store first" }
-if (-not (Have ffmpeg)) { WingetInstall Gyan.FFmpeg }
-if (-not (Have cloudflared)) { WingetInstall Cloudflare.cloudflared }
+foreach ($t in @(@{cmd = "ffmpeg"; id = "Gyan.FFmpeg"}, @{cmd = "cloudflared"; id = "Cloudflare.cloudflared"})) {
+    if (Have $t.cmd) { Write-Host "   $($t.cmd): present" } else { WingetInstall $t.id }
+}
 if ($FromSource) {
-    if (-not (Have git)) { WingetInstall Git.Git }
-    if (-not (Have go)) { WingetInstall GoLang.Go }
+    foreach ($t in @(@{cmd = "git"; id = "Git.Git"}, @{cmd = "go"; id = "GoLang.Go"})) {
+        if (Have $t.cmd) { Write-Host "   $($t.cmd): present" } else { WingetInstall $t.id }
+    }
 }
 RefreshPath
 if (-not (Have ffmpeg)) { Write-Warning "ffmpeg still not on PATH; open a new terminal after setup" }
