@@ -11,7 +11,15 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 irm https://github.com/aTeNa0001/smashrate/releases/latest/download/setup.ps1 | iex
 ```
 
-インストール先は `C:\smashrate`。終わったら `C:\smashrate\smashrate.toml` を編集して、
+GitHub Release を使わず、ミニPC上でソースから直接ビルドする場合（Go と Git も自動で入る。
+同じ行をもう一度実行すると最新ソースに更新して再ビルド）:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/aTeNa0001/smashrate/main/deploy/setup.ps1))) -FromSource
+```
+
+インストール先は `C:\smashrate`（ソースは `C:\smashrate\src`）。終わったら `C:\smashrate\smashrate.toml` を編集して、
 `schtasks /End /TN smashrate; schtasks /Run /TN smashrate` で再起動する。
 起動がブロックされる場合は Windows セキュリティの Smart App Control をオフにする。
 

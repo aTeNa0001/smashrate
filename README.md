@@ -23,7 +23,13 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 irm https://github.com/aTeNa0001/smashrate/releases/latest/download/setup.ps1 | iex
 ```
 
-ソースから動かす場合:
+リリースを使わずミニPC上でソースからビルドする場合は末尾に `-FromSource` を付けます（Go と Git も自動導入）:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/aTeNa0001/smashrate/main/deploy/setup.ps1))) -FromSource
+```
+
+手でソースから動かす場合:
 
 ```
 go build -o smashrate ./cmd/smashrate

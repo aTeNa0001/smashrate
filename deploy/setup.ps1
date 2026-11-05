@@ -6,9 +6,15 @@ One-shot setup for the mini PC (Windows 10/11). Run in an elevated PowerShell:
 
 or, from a checkout:  powershell -ExecutionPolicy Bypass -File deploy\setup.ps1
 
+Build on the PC itself instead of downloading a release (no GitHub Release needed):
+
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/aTeNa0001/smashrate/main/deploy/setup.ps1))) -FromSource
+
+Re-running the same line later updates to the newest source and rebuilds.
+
 What it does:
-  1. installs ffmpeg and cloudflared with winget (skipped if present)
-  2. downloads the latest smashrate.exe release into C:\smashrate
+  1. installs ffmpeg and cloudflared with winget (skipped if present); Go and Git with -FromSource
+  2. downloads the latest smashrate.exe release into C:\smashrate (or clones + builds with -FromSource)
   3. writes smashrate.toml from the example if none exists
   4. registers the "smashrate" scheduled task (starts at logon, restarts on exit)
   5. prints the remaining manual steps (config values, cloudflared tunnel)
@@ -16,38 +22,59 @@ What it does:
 param(
     [string]$Dir = "C:\smashrate",
     [string]$Repo = "aTeNa0001/smashrate",
+    # Build from the git source on this PC instead of downloading a release
+    # (installs Go and Git; no GitHub Release needed).
+    [switch]$FromSource,
+    [string]$Branch = "main",
     [switch]$NoTask
 )
 $ErrorActionPreference = "Stop"
 
 function Have($cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
+function RefreshPath { $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User") }
+function WingetInstall($id) { winget install --id $id -e --accept-source-agreements --accept-package-agreements --silent | Out-Null; RefreshPath }
 
 Write-Host "== 1/5 tools" -ForegroundColor Cyan
 if (-not (Have winget)) { throw "winget not found; install 'App Installer' from the Microsoft Store first" }
-if (-not (Have ffmpeg)) { winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements --silent | Out-Null }
-if (-not (Have cloudflared)) { winget install --id Cloudflare.cloudflared -e --accept-source-agreements --accept-package-agreements --silent | Out-Null }
-$env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+if (-not (Have ffmpeg)) { WingetInstall Gyan.FFmpeg }
+if (-not (Have cloudflared)) { WingetInstall Cloudflare.cloudflared }
+if ($FromSource) {
+    if (-not (Have git)) { WingetInstall Git.Git }
+    if (-not (Have go)) { WingetInstall GoLang.Go }
+}
+RefreshPath
 if (-not (Have ffmpeg)) { Write-Warning "ffmpeg still not on PATH; open a new terminal after setup" }
 
 Write-Host "== 2/5 smashrate.exe" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force $Dir | Out-Null
 $exe = Join-Path $Dir "smashrate.exe"
-$url = "https://github.com/$Repo/releases/latest/download/smashrate-windows-amd64.exe"
-Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
-Unblock-File $exe
-& $exe 2>&1 | Select-Object -First 1 | Out-Null   # sanity: runs at all (prints usage)
+$src = Join-Path $Dir "src"
+if ($FromSource) {
+    if (Test-Path (Join-Path $src ".git")) {
+        git -C $src fetch -q origin; git -C $src checkout -q $Branch; git -C $src pull -q --ff-only origin $Branch
+    } else {
+        git clone -q -b $Branch "https://github.com/$Repo.git" $src
+    }
+    Push-Location $src
+    try { go build -trimpath -ldflags "-s -w -X main.version=$(git rev-parse --short HEAD)" -o $exe .\cmd\smashrate } finally { Pop-Location }
+} else {
+    $url = "https://github.com/$Repo/releases/latest/download/smashrate-windows-amd64.exe"
+    Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+    Unblock-File $exe
+}
+& $exe version
 
 Write-Host "== 3/5 config" -ForegroundColor Cyan
 $toml = Join-Path $Dir "smashrate.toml"
+$fileSource = { param($name) if ($FromSource) { Copy-Item (Join-Path $src $name) (Join-Path $Dir (Split-Path $name -Leaf)) -Force } else { Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest/download/$(Split-Path $name -Leaf)" -OutFile (Join-Path $Dir (Split-Path $name -Leaf)) -UseBasicParsing } }
 if (-not (Test-Path $toml)) {
-    Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest/download/smashrate.example.toml" -OutFile $toml -UseBasicParsing
+    & $fileSource "smashrate.example.toml"
+    Move-Item (Join-Path $Dir "smashrate.example.toml") $toml -Force
     Write-Host "wrote $toml (edit it: base_url, [server.auth] password, [slack], [vision])"
 } else {
     Write-Host "keeping existing $toml"
 }
-foreach ($f in "install-task.ps1", "backup.ps1", "cloudflared.config.yml") {
-    Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest/download/$f" -OutFile (Join-Path $Dir $f) -UseBasicParsing
-}
+foreach ($f in "deploy\install-task.ps1", "deploy\backup.ps1", "deploy\cloudflared.config.yml") { & $fileSource $f }
 
 Write-Host "== 4/5 scheduled task" -ForegroundColor Cyan
 if ($NoTask) {
