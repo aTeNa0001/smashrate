@@ -43,10 +43,38 @@ FAIL には直し方を併記します。
 
 ## 自動記録を動かすまで
 
-1. Switch のドック → キャプチャボード → テレビと繋ぎ、キャプチャボードの USB をミニPCの USB 3.0 へ。
-2. `.\smashrate.exe vision devices` でデバイス名を確認し、`smashrate.toml` の `[vision]` に `enabled = true` と `input = "video=<名前>"` を書く。
-3. リザルト画面が出ている時に `.\smashrate.exe vision snapshot -out shot.png` で 1 枚保存し、`docs/VISION.md` の手順で領域を合わせて `vision teach` を実行。
-4. 以後はリザルト画面が出るたびに自動で記録され、Slack に通知される。
+PowerShell で `cd C:/smashrate` してから（`\` が打てなければ `/` で可）:
+
+1. 配線: Switch のドック → キャプチャボード IN、キャプチャボード OUT → テレビ／モニター、キャプチャボードの USB → ミニPCの USB 3.0。
+2. デバイス名を確認（`"〇〇" (video)` の名前。audio は使わない）:
+
+   ```powershell
+   ./smashrate.exe vision devices
+   ```
+
+3. `notepad smashrate.toml` で `[vision]` の 2 行を直して保存:
+
+   ```toml
+   enabled = true
+   input = "video=<2 で出た名前>"
+   ```
+
+4. 再起動して確認（「キャプチャデバイス」「フレーム取得」が OK になるまで）:
+
+   ```powershell
+   schtasks /End /TN smashrate; schtasks /Run /TN smashrate
+   ./smashrate.exe doctor
+   ```
+
+5. スマブラのリザルト画面が出ているときに 1 枚保存し、`docs/VISION.md` の手順で領域を合わせて `vision teach` を実行:
+
+   ```powershell
+   ./smashrate.exe vision snapshot -out C:/smashrate/shot1.png
+   ```
+
+6. 以後はリザルト画面が出るたびに自動で記録され、Slack に通知される。
+
+設定を変えたあとは毎回 4 の 2 行（再起動と doctor）を実行する。
 
 ## Slack
 
