@@ -1,0 +1,36 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 ./...
+      - name: Build
+        run: |
+          mkdir -p dist
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o dist/smashrate-windows-amd64.exe ./cmd/smashrate
+          GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o dist/smashrate-linux-amd64 ./cmd/smashrate
+          GOOS=linux   GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o dist/smashrate-linux-arm64 ./cmd/smashrate
+          cp smashrate.example.toml dist/
+          cp -r deploy dist/deploy
+          (cd dist && sha256sum * > SHA256SUMS 2>/dev/null || true)
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/smashrate-windows-amd64.exe
+            dist/smashrate-linux-amd64
+            dist/smashrate-linux-arm64
+            dist/smashrate.example.toml
+            dist/deploy/setup.ps1
+            dist/deploy/install-task.ps1
+            dist/deploy/backup.ps1
+            dist/deploy/cloudflared.config.yml
+          generate_release_notes: true

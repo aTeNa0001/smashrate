@@ -16,6 +16,15 @@
 
 ## セットアップ
 
+ミニPC（Windows）なら管理者 PowerShell で 1 行。ffmpeg・cloudflared・本体の導入と常駐化まで行います。
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+irm https://github.com/aTeNa0001/smashrate/releases/latest/download/setup.ps1 | iex
+```
+
+ソースから動かす場合:
+
 ```
 go build -o smashrate ./cmd/smashrate
 cp smashrate.example.toml smashrate.toml   # 必要な項目を編集

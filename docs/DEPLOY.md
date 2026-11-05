@@ -1,3 +1,22 @@
+# ミニPCのセットアップと公開手順
+
+## 0. 最短セットアップ（Windows ミニPC）
+
+Go のビルド環境は不要。管理者 PowerShell で次を実行すると、ffmpeg と cloudflared の導入、
+最新リリースの smashrate.exe のダウンロード、設定ファイルの雛形作成、ログオン時起動の
+タスク登録、日次バックアップのタスク登録まで一度に行う。
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+irm https://github.com/aTeNa0001/smashrate/releases/latest/download/setup.ps1 | iex
+```
+
+インストール先は `C:\smashrate`。終わったら `C:\smashrate\smashrate.toml` を編集して、
+`schtasks /End /TN smashrate; schtasks /Run /TN smashrate` で再起動する。
+起動がブロックされる場合は Windows セキュリティの Smart App Control をオフにする。
+
+以下は公開（外から使う）ための追加手順。
+
 # 公開手順: Cloudflare Tunnel + Access + 簡易ログイン
 
 ミニPC上の `smashrate serve`（localhost:8080）を、ポート開放なしで `https://smash.example.com` として公開し、

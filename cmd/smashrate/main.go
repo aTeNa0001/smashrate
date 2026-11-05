@@ -26,12 +26,16 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/vision"
 )
 
+// version is set by the release build (-ldflags "-X main.version=v1.2.3").
+var version = "dev"
+
 const usage = `smashrate - Smash Bros. local rating system
 
 Usage:
   smashrate [-config smashrate.toml] <command> [args]
 
 Commands:
+  version                     print the build version
   serve                       run web UI / API (+ Slack bot and capture watcher if enabled)
   record "A:mario > B:link"   record a match (same syntax as Slack)
   rank [1v1|ffa|team]         print the leaderboard
@@ -64,6 +68,10 @@ func main() {
 	if flag.NArg() == 0 {
 		flag.Usage()
 		os.Exit(2)
+	}
+	if flag.Arg(0) == "version" {
+		fmt.Println("smashrate", version)
+		return
 	}
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
