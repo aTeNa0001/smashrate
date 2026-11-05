@@ -31,7 +31,20 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Have($cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
-function RefreshPath { $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User") }
+function RefreshPath {
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    # Freshly installed tools are not always on PATH in this session yet; add their usual homes.
+    $extra = @(
+        "C:\Program Files\Go\bin",
+        "$env:LOCALAPPDATA\Programs\Go\bin",
+        "C:\Program Files\Git\cmd",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
+        "C:\Program Files\cloudflared"
+    )
+    $extra += Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Directory -Filter "Gyan.FFmpeg*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-ChildItem $_.FullName -Directory -Recurse -Filter bin -ErrorAction SilentlyContinue | ForEach-Object FullName }
+    foreach ($p in $extra) { if ($p -and (Test-Path $p) -and ($env:Path -notlike "*$p*")) { $env:Path += ";$p" } }
+}
 function WingetInstall($id) {
     Write-Host "   installing $id (winget; this downloads 50-150 MB, progress below)" -ForegroundColor DarkGray
     winget install --id $id -e --source winget --accept-source-agreements --accept-package-agreements --disable-interactivity
@@ -51,6 +64,11 @@ if ($FromSource) {
 }
 RefreshPath
 if (-not (Have ffmpeg)) { Write-Warning "ffmpeg still not on PATH; open a new terminal after setup" }
+if ($FromSource) {
+    foreach ($cmd in "git", "go") {
+        if (-not (Have $cmd)) { throw "$cmd was installed but is not on PATH yet. Close this window, open a new admin PowerShell and run the same two lines again." }
+    }
+}
 
 Write-Host "== 2/5 smashrate.exe" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force $Dir | Out-Null
