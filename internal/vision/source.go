@@ -40,6 +40,11 @@ func OpenFFmpeg(cfg config.VisionConfig) (*FFmpegSource, error) {
 		fps = 2
 	}
 	args := []string{"-hide_banner", "-loglevel", "error", "-f", cfg.InputFormat}
+	if cfg.InputFormat == "dshow" {
+		// We only consume a few frames per second; a bigger real-time buffer
+		// stops dshow from logging "buffer too full, frame dropped" constantly.
+		args = append(args, "-rtbufsize", "256M")
+	}
 	args = append(args, cfg.InputArgs...)
 	args = append(args, "-i", cfg.Input,
 		"-vf", fmt.Sprintf("fps=%g,scale=%d:%d", fps, w, h),
