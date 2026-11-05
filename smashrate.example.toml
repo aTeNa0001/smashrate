@@ -41,8 +41,11 @@ input = "video=USB Video"
 # input_args = ["-video_size", "1920x1080", "-framerate", "30"]
 width = 640
 height = 360
-fps = 2
-stable_frames = 3
+# The results screen can be short: 4 frames/s with 2 identical readings in a
+# row detects it within half a second. OCR then runs on the captured frame,
+# so the screen may disappear right after.
+fps = 4
+stable_frames = 2
 cooldown_seconds = 90
 # Hamming distance (0-64) allowed between a region hash and a learned template.
 screen_threshold = 10

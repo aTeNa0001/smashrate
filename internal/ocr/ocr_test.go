@@ -42,8 +42,34 @@ func TestMatchName(t *testing.T) {
 	}
 }
 
+func TestMatchCharacterAndRank(t *testing.T) {
+	for in, want := range map[string]string{
+		"DONKEY\nKONG":      "donkey_kong",
+		"MARIO":             "mario",
+		"BANJO &\nKAZOOIE":  "banjo_kazooie",
+		"F0X":               "fox", // 0/o confusion
+		"MR. GAME & WATCH":  "mr_game_and_watch",
+		"P0KEMON TRAINER":   "pokemon_trainer",
+		"ZERO SUIT SAMUS":   "zero_suit_samus",
+		"DARK  SAMUS":       "dark_samus",
+		"ROSALINA & LUMA":   "rosalina",
+		"nothing like this": "",
+		"":                  "",
+	} {
+		got, ok := MatchCharacter(in)
+		if got != want || ok != (want != "") {
+			t.Fatalf("%q: got %q/%v want %q", in, got, ok, want)
+		}
+	}
+	for in, want := range map[string]int{"2": 2, "1st": 1, "３位": 3, "\n 4\n": 4, "x": 0, "": 0, "9": 0} {
+		if got := ParseRank(in); got != want {
+			t.Fatalf("rank %q: got %d want %d", in, got, want)
+		}
+	}
+}
+
 func TestIsPlaceholder(t *testing.T) {
-	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", ""} {
+	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", ""} {
 		if !IsPlaceholder(s) {
 			t.Fatalf("%q should be a placeholder", s)
 		}

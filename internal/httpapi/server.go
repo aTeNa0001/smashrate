@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"image"
+	"image/png"
 	"log"
 	"net/http"
 	"net/url"
@@ -25,15 +27,20 @@ var templateFS embed.FS
 
 // Server is the HTTP layer.
 type Server struct {
-	core *core.Core
-	tpl  *template.Template
-	mux  *http.ServeMux
-	auth *auth
+	core  *core.Core
+	tpl   *template.Template
+	mux   *http.ServeMux
+	auth  *auth
+	frame func() image.Image
 }
 
 // Options configures the server.
 type Options struct {
 	Auth config.AuthConfig
+	// Frame returns the capture watcher's latest frame (nil when none);
+	// served at /api/vision/snapshot so screenshots can be taken without
+	// re-opening the capture device.
+	Frame func() image.Image
 }
 
 // New builds the handler.
@@ -91,9 +98,24 @@ func New(c *core.Core, opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth)}
+	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), frame: opt.Frame}
 	s.routes()
 	return s, nil
+}
+
+func (s *Server) apiSnapshot(w http.ResponseWriter, r *http.Request) {
+	if s.frame == nil {
+		writeErr(w, 404, fmt.Errorf("capture watcher is not running (vision.enabled = false)"))
+		return
+	}
+	img := s.frame()
+	if img == nil {
+		writeErr(w, 503, fmt.Errorf("no frame received yet"))
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	png.Encode(w, img)
 }
 
 func modeName(m string) string {
@@ -139,6 +161,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/matches/{id}", s.apiUpdate)
 	s.mux.HandleFunc("POST /api/balance", s.apiBalance)
 	s.mux.HandleFunc("GET /api/characters", s.apiCharacters)
+	s.mux.HandleFunc("GET /api/vision/snapshot", s.apiSnapshot)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 }
 

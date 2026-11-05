@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,12 +38,13 @@ type Watcher struct {
 	notify  func(string)
 	ocr     ocr.Engine // nil = disabled
 
-	mu       sync.Mutex
-	pending  map[string]pendingCrop
-	lastKey  string
-	stable   int
-	lastSeen string
-	cooldown time.Time
+	mu        sync.Mutex
+	pending   map[string]pendingCrop
+	lastFrame image.Image
+	lastKey   string
+	stable    int
+	lastSeen  string
+	cooldown  time.Time
 }
 
 // NewWatcher wires the detector to the core. notify may be nil.
@@ -69,22 +71,39 @@ func NewWatcher(cfg config.VisionConfig, c *core.Core, dataDir string, notify fu
 // SetOCR replaces the OCR engine (tests, or a custom engine).
 func (w *Watcher) SetOCR(e ocr.Engine) { w.ocr = e }
 
-// readTag OCRs a name-tag crop and resolves it to a player name, creating
-// the player when the text matches nobody. The tag's hash is stored so the
-// next appearance is matched without OCR. Returns "" when nothing was read.
-func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created bool) {
+// recognize runs OCR on a crop; "" when OCR is disabled or fails.
+func (w *Watcher) recognize(crop image.Image) string {
 	if w.ocr == nil {
-		return "", false
+		return ""
 	}
 	text, err := w.ocr.Recognize(crop)
 	if err != nil {
 		log.Printf("vision: ocr: %v", err)
-		return "", false
+		return ""
 	}
+	return text
+}
+
+// learn stores a hash under a label and reloads the detector.
+func (w *Watcher) learn(kind, label string, hash uint64) {
+	if err := w.core.AddTemplate(kind, label, hash); err == nil {
+		_ = w.det.Reload(w.core)
+	}
+}
+
+// readTag OCRs a name-tag crop and resolves it to a player name, creating
+// the player when the text matches nobody. The tag's hash is stored so the
+// next appearance is matched without OCR. placeholder is true for default
+// labels (プレイヤー1, コンピューター2, P1, CPU), which are remembered too.
+func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created, placeholder bool) {
+	text := w.recognize(crop)
 	clean := ocr.NormalizeName(text)
+	if clean == "" {
+		return "", false, false
+	}
 	if ocr.IsPlaceholder(clean) {
-		// "P1" / "CPU": a console without a name tag chosen. Not a person.
-		return "", false
+		w.learn(KindName, PlaceholderLabel, hash)
+		return "", false, true
 	}
 	players, _ := w.core.Players()
 	names := make([]string, 0, len(players))
@@ -97,20 +116,45 @@ func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created b
 		p, err := w.core.GetOrCreatePlayer(clean)
 		if err != nil {
 			log.Printf("vision: create player %q: %v", clean, err)
-			return "", false
+			return "", false, false
 		}
 		name, created = p.Name, true
 	}
-	if err := w.core.AddTemplate(KindName, name, hash); err == nil {
-		_ = w.det.Reload(w.core)
+	w.learn(KindName, name, hash)
+	return name, created, false
+}
+
+// readChar OCRs the fighter-name caption and learns its hash.
+func (w *Watcher) readChar(crop image.Image, hash uint64) string {
+	key, ok := ocr.MatchCharacter(w.recognize(crop))
+	if !ok {
+		return ""
 	}
-	return name, created
+	w.learn(KindChar, key, hash)
+	return key
+}
+
+// readRank OCRs the placement badge and learns its hash.
+func (w *Watcher) readRank(crop image.Image, hash uint64) int {
+	n := ocr.ParseRank(w.recognize(crop))
+	if n == 0 {
+		return 0
+	}
+	w.learn(KindRank, strconv.Itoa(n), hash)
+	return n
+}
+
+// LastFrame returns the most recent frame seen (nil before the first).
+func (w *Watcher) LastFrame() image.Image {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lastFrame
 }
 
 // Run consumes frames until ctx ends or the source is exhausted.
 func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
 	if w.det.TemplateCount(KindScreen) == 0 {
-		w.notify("リザルト画面のテンプレートが未登録です。`smashrate vision teach` で最初の画面（キャラ・順位・名前タグ）を学習させてください。")
+		w.notify("リザルト画面のテンプレートが未登録です。リザルト画面のスクショで `smashrate vision teach -image shot.png -players N` を一度実行してください（キャラ・順位・名前は以後自動で学習します）。")
 	}
 	for {
 		select {
@@ -131,6 +175,9 @@ func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
 
 // Process handles one frame. Exported so tests and `vision test` can drive it.
 func (w *Watcher) Process(img image.Image) {
+	w.mu.Lock()
+	w.lastFrame = img
+	w.mu.Unlock()
 	reading, ok := w.det.Detect(img)
 	if !ok {
 		w.lastKey, w.stable = "", 0
@@ -166,46 +213,67 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	var in core.MatchInput
 	in.Source = "vision"
 	var unknown []string
-	var unidentified []int
+	var unidentified, placeholders []int
 	var newcomers []string
+	b := img.Bounds()
 	for i, s := range r.Slots {
+		if i >= len(layout.Slots) {
+			break
+		}
+		slot := layout.Slots[i]
 		// The name tag identifies the human: learned hash first, OCR for a
 		// tag never seen before, manual labelling as the last resort.
-		name := s.Name
-		if name == "" && i < len(layout.Slots) {
-			crop := Crop(img, Rect(img.Bounds(), layout.Slots[i].Name))
+		name, placeholder := s.Name, s.Placeholder
+		if name == "" && !placeholder {
 			var created bool
-			if name, created = w.readTag(crop, s.NameHash); created {
+			name, created, placeholder = w.readTag(Crop(img, Rect(b, slot.Name)), s.NameHash)
+			if created {
 				newcomers = append(newcomers, name)
 			}
 		}
+		if placeholder {
+			placeholders = append(placeholders, s.Port)
+			continue
+		}
 		if name == "" {
 			unidentified = append(unidentified, s.Port)
-			if i < len(layout.Slots) {
-				id := w.stash(KindName, s.NameHash, img, Rect(img.Bounds(), layout.Slots[i].Name))
-				unknown = append(unknown, fmt.Sprintf("P%d 名前タグ → %s", s.Port, id))
-			}
+			id := w.stash(KindName, s.NameHash, img, Rect(b, slot.Name))
+			unknown = append(unknown, fmt.Sprintf("P%d 名前タグ → %s", s.Port, id))
 			continue
+		}
+		// Character and placement: learned hash, else OCR of the caption /
+		// badge (self-learning), else a crop for manual labelling.
+		char := s.Char
+		if char == "" {
+			char = w.readChar(Crop(img, Rect(b, slot.Char)), s.CharHash)
+		}
+		if char == "" {
+			id := w.stash(KindChar, s.CharHash, img, Rect(b, slot.Char))
+			unknown = append(unknown, fmt.Sprintf("P%d キャラ → %s", s.Port, id))
+		}
+		rank := s.Rank
+		if rank == 0 {
+			rank = w.readRank(Crop(img, Rect(b, slot.Rank)), s.RankHash)
+		}
+		if rank == 0 {
+			id := w.stash(KindRank, s.RankHash, img, Rect(b, slot.Rank))
+			unknown = append(unknown, fmt.Sprintf("P%d 順位 → %s", s.Port, id))
 		}
 		// 1on1 / free-for-all: everyone is their own team. Team battle: the
 		// results screen gives teammates the same placement, so rank = team.
 		team := s.Port
 		if r.Team {
-			team = s.Rank
+			team = rank
 		}
-		e := core.EntryInput{Player: name, Port: s.Port, Team: team, Rank: s.Rank, Character: s.Char}
-		if s.Char == "" && i < len(layout.Slots) {
-			id := w.stash(KindChar, s.CharHash, img, Rect(img.Bounds(), layout.Slots[i].Char))
-			unknown = append(unknown, fmt.Sprintf("P%d キャラ → %s", s.Port, id))
-		}
-		if s.Rank == 0 && i < len(layout.Slots) {
-			id := w.stash(KindRank, s.RankHash, img, Rect(img.Bounds(), layout.Slots[i].Rank))
-			unknown = append(unknown, fmt.Sprintf("P%d 順位 → %s", s.Port, id))
-		}
-		in.Entries = append(in.Entries, e)
+		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: team, Rank: rank, Character: char})
 	}
 
 	var msg []string
+	if len(placeholders) > 0 {
+		// CPU fighters or humans without a name tag: never rate such a match.
+		w.notify(fmt.Sprintf("列 %v が CPU か名前タグ未設定のため、この試合は記録しません。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders))
+		return
+	}
 	if len(newcomers) > 0 {
 		msg = append(msg, fmt.Sprintf("新しいプレイヤーを登録しました: %s（読み間違いなら `rename <今の名前> <正しい名前>`、既存の人なら `merge <今の名前> <既存の名前>`）", strings.Join(newcomers, ", ")))
 	}
@@ -215,7 +283,13 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	if len(unknown) > 0 {
 		msg = append(msg, "未知の画像があります。`learn <画像ID> <ラベル>` で教えてください:\n  "+strings.Join(unknown, "\n  "))
 	}
-	if len(unidentified) == 0 && r.Complete() && len(in.Entries) >= 2 {
+	complete := len(in.Entries) >= 2
+	for _, e := range in.Entries {
+		if e.Rank == 0 {
+			complete = false
+		}
+	}
+	if len(unidentified) == 0 && complete {
 		m, err := w.core.RecordMatch(in)
 		if err != nil {
 			msg = append(msg, "自動記録に失敗: "+err.Error())

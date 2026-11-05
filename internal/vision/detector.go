@@ -20,18 +20,23 @@ const (
 	KindName   = "name"   // label = player name (as shown on the name tag)
 )
 
+// PlaceholderLabel marks a learned name-tag hash that is not a person
+// (P1 / プレイヤー1 / CPU / コンピューター2).
+const PlaceholderLabel = "#placeholder"
+
 // SlotReading is what was recognised in one player column.
 type SlotReading struct {
-	Port     int
-	Name     string // player name from the name tag, "" if unknown
-	NameDist int
-	NameHash uint64
-	Char     string // character key, "" if unknown
-	CharDist int
-	CharHash uint64
-	Rank     int // 0 if unknown
-	RankDist int
-	RankHash uint64
+	Port        int
+	Name        string // player name from the name tag, "" if unknown
+	Placeholder bool   // the tag is a default label or a CPU, not a person
+	NameDist    int
+	NameHash    uint64
+	Char        string // character key, "" if unknown
+	CharDist    int
+	CharHash    uint64
+	Rank        int // 0 if unknown
+	RankDist    int
+	RankHash    uint64
 }
 
 // Reading is a recognised results screen.
@@ -47,7 +52,7 @@ func (r Reading) Key() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%d:%v:", r.Players, r.Team)
 	for _, s := range r.Slots {
-		fmt.Fprintf(&sb, "P%d=%s/%s/%d;", s.Port, s.Name, s.Char, s.Rank)
+		fmt.Fprintf(&sb, "P%d=%s/%v/%s/%d;", s.Port, s.Name, s.Placeholder, s.Char, s.Rank)
 	}
 	return sb.String()
 }
@@ -117,7 +122,12 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			sr := SlotReading{Port: slot.Port}
 			sr.NameHash = DHash(img, Rect(b, slot.Name))
 			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
-				sr.Name, sr.NameDist = lbl, dist
+				sr.NameDist = dist
+				if strings.HasPrefix(lbl, "#") {
+					sr.Placeholder = true
+				} else {
+					sr.Name = lbl
+				}
 			} else {
 				sr.NameDist = dist
 			}

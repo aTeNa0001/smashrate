@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/aTeNa0001/smashrate/internal/characters"
 )
 
 // NormalizeName cleans OCR output into a player name: first non-empty line,
@@ -29,14 +31,62 @@ func NormalizeName(text string) string {
 	return ""
 }
 
-var placeholderTag = regexp.MustCompile(`(?i)^(p|player|プレイヤー|cpu|com)[ -]?[1-8]?$`)
+var placeholderTag = regexp.MustCompile(`(?i)^(p|player|プレイヤー|プレイヤ|cpu|com|コンピューター|コンピュータ|コンピュー)[ -]?[1-8]?$`)
 
 // IsPlaceholder reports whether an OCR'd tag is the game's default label
-// (P1, Player 2, CPU, ...) rather than a person's name. This happens on a
-// console where no name tag was chosen; such a player must not be registered.
+// (P1, プレイヤー1, CPU, コンピューター2, ...) rather than a person's name.
+// Humans without a chosen name tag and CPU fighters both show such labels;
+// neither may be registered as a player.
 func IsPlaceholder(text string) bool {
 	n := NormalizeName(text)
 	return n == "" || placeholderTag.MatchString(n)
+}
+
+// NormalizeJoined is NormalizeName over every line joined together, for
+// labels that wrap onto two lines (e.g. the fighter name "DONKEY KONG").
+func NormalizeJoined(text string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		b.WriteString(NormalizeName(line))
+	}
+	return b.String()
+}
+
+// MatchCharacter resolves OCR'd fighter-name text (the English caption on
+// the results screen) to a character key, tolerating small misreads.
+func MatchCharacter(text string) (string, bool) {
+	joined := NormalizeJoined(text)
+	if joined == "" {
+		return "", false
+	}
+	if ch, ok := characters.Resolve(joined); ok {
+		return ch.Key, true
+	}
+	names := make([]string, 0, len(characters.All))
+	for _, c := range characters.All {
+		names = append(names, c.NameEN)
+	}
+	if m := MatchName(joined, names); m != "" {
+		if ch, ok := characters.Resolve(m); ok {
+			return ch.Key, true
+		}
+	}
+	return "", false
+}
+
+var rankDigit = regexp.MustCompile(`[1-8１-８]`)
+
+// ParseRank extracts a placement 1-8 from OCR'd badge text ("2", "1st", "３位").
+func ParseRank(text string) int {
+	m := rankDigit.FindString(text)
+	if m == "" {
+		return 0
+	}
+	r := []rune(m)[0]
+	if r >= '１' && r <= '８' {
+		return int(r-'１') + 1
+	}
+	return int(r - '0')
 }
 
 // Levenshtein is the edit distance between two strings in runes.

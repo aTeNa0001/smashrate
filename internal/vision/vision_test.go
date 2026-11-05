@@ -275,6 +275,81 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	}
 }
 
+func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
+	c, err := core.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cfg := config.Default().Vision
+	cfg.StableFrames = 1
+	cfg.CooldownSeconds = 1
+	cfg.OCR.Engine = "none"
+
+	// teach only "this is the results screen": everything else comes from OCR
+	f1 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 42)
+	if err := Teach(c, cfg, f1, 2, "", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	layout, _ := cfg.Layout(2, "")
+	b := f1.Bounds()
+	hashOf := func(img image.Image, r config.Region) uint64 {
+		cr := Crop(img, Rect(img.Bounds(), r))
+		return DHash(cr, cr.Bounds())
+	}
+	fake := &fakeOCR{byHash: map[uint64]string{
+		hashOf(f1, layout.Slots[0].Name): "た ろ う", hashOf(f1, layout.Slots[1].Name): "Hanako",
+		hashOf(f1, layout.Slots[0].Char): "DONKEY\nKONG", hashOf(f1, layout.Slots[1].Char): "MARI0",
+		hashOf(f1, layout.Slots[0].Rank): "2", hashOf(f1, layout.Slots[1].Rank): "1",
+	}}
+	w, err := NewWatcher(cfg, c, t.TempDir(), func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SetOCR(fake)
+	_ = b
+
+	w.Process(f1)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("expected a recorded match, got %d", len(ms))
+	}
+	e := ms[0].Entries
+	if e[0].PlayerName != "たろう" || e[0].Character != "donkey_kong" || e[0].Rank != 2 || e[1].Character != "mario" || e[1].Rank != 1 {
+		t.Fatalf("entries: %+v", e)
+	}
+	calls := fake.calls
+	// everything is now learned: the same screen needs no OCR at all
+	w.lastSeen = ""
+	w.Process(f1)
+	if fake.calls != calls {
+		t.Fatalf("expected no further OCR, got %d more calls", fake.calls-calls)
+	}
+	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
+		t.Fatal("second identical screen should record again after cooldown reset")
+	}
+
+	// a CPU opponent: the tag reads コンピューター2, nothing is recorded or stashed
+	f2 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 77)
+	fake.byHash[hashOf(f2, layout.Slots[1].Name)] = "コ ン ピ ュ ー タ ー 2"
+	var msgs []string
+	w.notify = func(s string) { msgs = append(msgs, s) }
+	w.Process(f2)
+	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
+		t.Fatal("match with a CPU must not be recorded")
+	}
+	if len(w.Pending()) != 0 || len(msgs) != 1 || !strings.Contains(msgs[0], "CPU") {
+		t.Fatalf("cpu handling: pending=%v msgs=%v", w.Pending(), msgs)
+	}
+	// and the CPU tag is remembered as a placeholder: no OCR next time
+	calls = fake.calls
+	w.lastSeen = ""
+	w.Process(f2)
+	if fake.calls != calls {
+		t.Fatal("placeholder tag should be matched by hash, not OCR'd again")
+	}
+}
+
 func TestTeamBattleResultsScreen(t *testing.T) {
 	c, err := core.Open(":memory:")
 	if err != nil {

@@ -130,7 +130,7 @@ func Default() Config {
 		Slack:  SlackConfig{Command: "/smash"},
 		Vision: VisionConfig{
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
-			Width: 640, Height: 360, FPS: 2, StableFrames: 3, CooldownSeconds: 90,
+			Width: 640, Height: 360, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
 			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 10, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
@@ -138,10 +138,13 @@ func Default() Config {
 	}
 }
 
-// defaultLayouts are starting-point geometries for Smash Ultimate's results
-// screen (16:9): one column per player for 2-4 players, two rows of up to
-// four columns for 5-8 players. They are meant to be tuned with
-// `smashrate vision regions` against a real screenshot.
+// defaultLayouts are geometries for Smash Ultimate's results screen (16:9),
+// measured on a real 4-player capture: each column shows, from the top, the
+// fighter name caption (English, up to two lines) with the placement number
+// at the column's top right, then the port badge and the player's name tag,
+// then the portrait and the stat rows. One column per player for 2-4
+// players, two rows of up to four columns for 5-8 players. Tune with
+// `smashrate vision regions` against a screenshot when they do not fit.
 func defaultLayouts() []Layout {
 	// column i of cols within a band spanning [y0, y0+h) of the frame
 	cell := func(port, i, cols int, y0, h float64) Slot {
@@ -149,9 +152,12 @@ func defaultLayouts() []Layout {
 		x := float64(i) * w
 		return Slot{
 			Port: port,
-			Rank: Region{X: x + w*0.10, Y: y0 + h*0.08, W: w * 0.35, H: h * 0.14},
-			Char: Region{X: x + w*0.15, Y: y0 + h*0.30, W: w * 0.70, H: h * 0.35},
-			Name: Region{X: x + w*0.10, Y: y0 + h*0.67, W: w * 0.80, H: h * 0.08},
+			// "DONKEY KONG" caption, top left of the column
+			Char: Region{X: x + w*0.03, Y: y0 + h*0.02, W: w * 0.68, H: h * 0.13},
+			// placement numeral (with laurels for 1st), top right
+			Rank: Region{X: x + w*0.78, Y: y0 + h*0.005, W: w * 0.22, H: h * 0.15},
+			// name tag to the right of the "1P"/"CP" badge
+			Name: Region{X: x + w*0.30, Y: y0 + h*0.15, W: w * 0.68, H: h * 0.065},
 		}
 	}
 	var out []Layout
@@ -170,13 +176,16 @@ func defaultLayouts() []Layout {
 				slots = append(slots, cell(top+i+1, i, n-top, 0.43, 0.43))
 			}
 		}
-		out = append(out, Layout{Players: n, Screen: Region{X: 0.0, Y: 0.86, W: 1.0, H: 0.14}, Slots: slots})
+		// The screen is recognised by the stat-row labels (全滅/撃墜/落下/自滅)
+		// down the left edge, which never change; the numbers next to them do.
+		screen := Region{X: 0.0, Y: 0.56, W: 0.09, H: 0.37}
+		out = append(out, Layout{Players: n, Screen: screen, Slots: slots})
 		// Team battles (3+ players) show a differently arranged results screen.
 		// The same geometry is only a placeholder until tuned on a real screenshot.
 		if n >= 3 {
 			teamSlots := make([]Slot, len(slots))
 			copy(teamSlots, slots)
-			out = append(out, Layout{Players: n, Mode: "team", Screen: Region{X: 0.0, Y: 0.86, W: 1.0, H: 0.14}, Slots: teamSlots})
+			out = append(out, Layout{Players: n, Mode: "team", Screen: screen, Slots: teamSlots})
 		}
 	}
 	return out

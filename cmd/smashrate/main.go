@@ -7,7 +7,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"image"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -53,9 +56,10 @@ Commands:
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
   vision regions -image f [-players N] [-mode team]
                               write crops of every layout region (for tuning smashrate.toml)
-  vision teach -image f -players N [-mode team] -chars a,b -ranks 1,2 -names Taro,Hanako
-                              learn the results screen + its characters/ranks/name tags from a screenshot
-                              (teach the team-battle results screen separately with -mode team)
+  vision teach -image f -players N [-mode team]
+                              learn what the results screen looks like (once per player count / format);
+                              characters, placements and name tags are then learned automatically via OCR.
+                              Optional: -chars a,b -ranks 1,2 -names Taro,Hanako to pre-teach them.
   vision test -image f        run the detector on a screenshot and print what it sees
   vision ocr -image f         run the name-tag OCR engine on an image and print the text
   vision watch                run only the capture watcher (no web server)
@@ -147,7 +151,18 @@ func serve(cfg config.Config, c *core.Core) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := httpapi.New(c, httpapi.Options{Auth: cfg.Server.Auth})
+	var watcher *vision.Watcher
+	var bot *slackbot.Bot
+	opts := httpapi.Options{Auth: cfg.Server.Auth}
+	if cfg.Vision.Enabled {
+		opts.Frame = func() image.Image {
+			if watcher == nil {
+				return nil
+			}
+			return watcher.LastFrame()
+		}
+	}
+	srv, err := httpapi.New(c, opts)
 	if err != nil {
 		return err
 	}
@@ -156,9 +171,6 @@ func serve(cfg config.Config, c *core.Core) error {
 	} else {
 		log.Printf("web login disabled: anyone who can reach %s can record and delete", cfg.Server.Addr)
 	}
-
-	var watcher *vision.Watcher
-	var bot *slackbot.Bot
 
 	if cfg.Slack.Enabled {
 		if cfg.Slack.BotToken == "" || cfg.Slack.AppToken == "" {
@@ -380,18 +392,46 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		fmt.Print(vision.ListDevices(cfg.Vision))
 		return nil
 	case "snapshot":
+		path := *out
+		if path == "" {
+			path = filepath.Join(cfg.Server.DataDir, "snapshot.png")
+		}
+		// Prefer the running server's current frame: the device stays open, so
+		// there is no re-handshake (capture boards show their logo for a second
+		// or two after being opened).
+		host, port, _ := net.SplitHostPort(cfg.Server.Addr)
+		if host == "" {
+			host = "localhost"
+		}
+		if resp, err := (&http.Client{Timeout: 3 * time.Second}).Get(fmt.Sprintf("http://%s:%s/api/vision/snapshot", host, port)); err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == 200 {
+				f, err := os.Create(path)
+				if err != nil {
+					return err
+				}
+				_, err = io.Copy(f, resp.Body)
+				f.Close()
+				if err != nil {
+					return err
+				}
+				fmt.Println("saved", path, "(from the running watcher)")
+				return nil
+			}
+		}
 		src, err := vision.OpenFFmpeg(cfg.Vision)
 		if err != nil {
 			return err
 		}
 		defer src.Close()
-		img, err := src.Next()
-		if err != nil {
-			return err
-		}
-		path := *out
-		if path == "" {
-			path = filepath.Join(cfg.Server.DataDir, "snapshot.png")
+		// skip the first seconds: the board's logo / the signal handshake
+		var img image.Image
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) || img == nil {
+			img, err = src.Next()
+			if err != nil {
+				return err
+			}
 		}
 		if err := vision.SavePNG(path, img); err != nil {
 			return err
