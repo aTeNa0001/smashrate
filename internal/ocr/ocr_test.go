@@ -53,6 +53,8 @@ func TestMatchCharacterAndRank(t *testing.T) {
 		"ZERO SUIT SAMUS":   "zero_suit_samus",
 		"DARK  SAMUS":       "dark_samus",
 		"ROSALINA & LUMA":   "rosalina",
+		"PONKEY | KONG":     "donkey_kong",
+		"8A2」0\n& KAZOOIE":  "banjo_kazooie",
 		"nothing like this": "",
 		"":                  "",
 	} {
@@ -69,7 +71,7 @@ func TestMatchCharacterAndRank(t *testing.T) {
 }
 
 func TestIsPlaceholder(t *testing.T) {
-	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", ""} {
+	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", "コ ン に ユ ー タ ー 2", "ン ヒ ュ ー タ ー 4", "フ レ イ ヤ ー 1", ""} {
 		if !IsPlaceholder(s) {
 			t.Fatalf("%q should be a placeholder", s)
 		}
@@ -95,11 +97,46 @@ func TestUpscale(t *testing.T) {
 	if up.Rect.Dx() != 6 || up.Rect.Dy() != 3 {
 		t.Fatalf("size %v", up.Rect)
 	}
-	if r, _, _, _ := up.At(2, 2).RGBA(); r == 0 {
-		t.Fatal("left half should be white")
+	if r, _, _, _ := up.At(0, 1).RGBA(); r < 0xf000 {
+		t.Fatal("left edge should stay white")
 	}
-	if r, _, _, _ := up.At(3, 0).RGBA(); r != 0 {
-		t.Fatal("right half should be black")
+	if r, _, _, _ := up.At(5, 1).RGBA(); r > 0x0fff {
+		t.Fatal("right edge should stay black")
+	}
+	// bilinear: the middle is a blend, not a hard step
+	l, _, _, _ := up.At(2, 1).RGBA()
+	r, _, _, _ := up.At(3, 1).RGBA()
+	if !(l > r && l < 0xf000 && r > 0x0fff) {
+		t.Fatalf("expected a smooth ramp across the middle, got %x %x", l, r)
+	}
+}
+
+func TestGlyphSignature(t *testing.T) {
+	// a bright vertical bar on dark: signature has its middle columns set
+	// regardless of where the bar sits or how large the crop is
+	draw := func(w, h, x0, x1 int) *image.RGBA {
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				c := color.RGBA{20, 20, 20, 255}
+				if x >= x0 && x < x1 && y >= 2 && y < h-2 {
+					c = color.RGBA{250, 250, 250, 255}
+				}
+				img.Set(x, y, c)
+			}
+		}
+		return img
+	}
+	a, ok1 := GlyphSignature(draw(40, 40, 10, 18))
+	b, ok2 := GlyphSignature(draw(100, 60, 70, 90))
+	if !ok1 || !ok2 {
+		t.Fatal("expected glyphs")
+	}
+	if a != b {
+		t.Fatalf("signature should not depend on position/size: %016x vs %016x", a, b)
+	}
+	if _, ok := GlyphSignature(draw(40, 40, 0, 0)); ok {
+		t.Fatal("no bright ink should give no glyph")
 	}
 }
 

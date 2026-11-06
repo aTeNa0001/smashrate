@@ -10,6 +10,7 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/characters"
 	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
+	"github.com/aTeNa0001/smashrate/internal/ocr"
 )
 
 // Template kinds stored in the database.
@@ -95,6 +96,30 @@ func (d *Detector) Reload(c *core.Core) error {
 // TemplateCount returns how many templates of a kind are loaded.
 func (d *Detector) TemplateCount(kind string) int { return len(d.templates[kind]) }
 
+// builtinRanks are placement-numeral signatures measured on a real 4-player
+// results screen (640x360 capture), so 1st and 2nd work before anything has
+// been learned. The same digit varies by a few bits between columns, hence
+// more than one entry per label. Further digits are learned once (Slack
+// `learn` or `vision teach -ranks`).
+var builtinRanks = []core.Template{
+	{Kind: KindRank, Label: "1", Hash: 0xd630f0f030303030},
+	{Kind: KindRank, Label: "2", Hash: 0x1e7f670f3c70fffe},
+	{Kind: KindRank, Label: "2", Hash: 0x1e3f33071cf8bffe},
+}
+
+// classifyRank matches a numeral signature against learned and built-in ones.
+func (d *Detector) classifyRank(sig uint64) (string, int, bool) {
+	best, bestDist := "", 65
+	for _, list := range [][]core.Template{d.templates[KindRank], builtinRanks} {
+		for _, t := range list {
+			if dist := Hamming(t.Hash, sig); dist < bestDist {
+				best, bestDist = t.Label, dist
+			}
+		}
+	}
+	return best, bestDist, best != "" && bestDist <= d.cfg.RankThreshold
+}
+
 // classify returns the nearest template label within threshold.
 func (d *Detector) classify(kind string, h uint64, threshold int) (string, int, bool) {
 	best, bestDist := "", 65
@@ -137,12 +162,18 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			} else {
 				sr.CharDist = dist
 			}
-			sr.RankHash = DHash(img, Rect(b, slot.Rank))
-			if lbl, dist, ok := d.classify(KindRank, sr.RankHash, d.cfg.RankThreshold); ok {
-				sr.Rank, _ = strconv.Atoi(lbl)
-				sr.RankDist = dist
+			// The placement numeral is matched by its shape signature, which is
+			// independent of the column and of what is drawn behind it.
+			if sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, slot.Rank))); ok {
+				sr.RankHash = sig
+				if lbl, dist, ok := d.classifyRank(sig); ok {
+					sr.Rank, _ = strconv.Atoi(lbl)
+					sr.RankDist = dist
+				} else {
+					sr.RankDist = dist
+				}
 			} else {
-				sr.RankDist = dist
+				sr.RankDist = 64
 			}
 			r.Slots = append(r.Slots, sr)
 		}
@@ -214,7 +245,11 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 			if err != nil {
 				return err
 			}
-			if err := c.AddTemplate(KindRank, lbl, DHash(img, Rect(b, slot.Rank))); err != nil {
+			sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, slot.Rank)))
+			if !ok {
+				return fmt.Errorf("column %d: no numeral found in the rank region", i+1)
+			}
+			if err := c.AddTemplate(KindRank, lbl, sig); err != nil {
 				return err
 			}
 		}

@@ -131,7 +131,7 @@ func Default() Config {
 		Vision: VisionConfig{
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
 			Width: 640, Height: 360, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
-			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 10, NameThreshold: 10,
+			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 12, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
 		},
@@ -152,12 +152,14 @@ func defaultLayouts() []Layout {
 		x := float64(i) * w
 		return Slot{
 			Port: port,
-			// "DONKEY KONG" caption, top left of the column
-			Char: Region{X: x + w*0.03, Y: y0 + h*0.02, W: w * 0.68, H: h * 0.13},
-			// placement numeral (with laurels for 1st), top right
-			Rank: Region{X: x + w*0.78, Y: y0 + h*0.005, W: w * 0.22, H: h * 0.15},
-			// name tag to the right of the "1P"/"CP" badge
-			Name: Region{X: x + w*0.30, Y: y0 + h*0.15, W: w * 0.68, H: h * 0.065},
+			// The panels are slanted, so rows sit ~3% lower per column to the
+			// right; the regions are tall enough to cover every column.
+			// "DONKEY KONG" caption (up to two lines), top left, left of the series icon
+			Char: Region{X: x + w*0.02, Y: y0 + h*0.045, W: w * 0.56, H: h * 0.115},
+			// placement numeral (laurels for 1st), top right
+			Rank: Region{X: x + w*0.72, Y: y0 + h*0.02, W: w * 0.28, H: h * 0.16},
+			// name tag right of the "1P"/"CP" badge
+			Name: Region{X: x + w*0.22, Y: y0 + h*0.155, W: w * 0.48, H: h * 0.06},
 		}
 	}
 	var out []Layout
@@ -165,15 +167,15 @@ func defaultLayouts() []Layout {
 		var slots []Slot
 		if n <= 4 {
 			for i := 0; i < n; i++ {
-				slots = append(slots, cell(i+1, i, n, 0, 0.86))
+				slots = append(slots, cell(i+1, i, n, 0, 1.0))
 			}
 		} else {
 			top := (n + 1) / 2
 			for i := 0; i < top; i++ {
-				slots = append(slots, cell(i+1, i, top, 0, 0.43))
+				slots = append(slots, cell(i+1, i, top, 0, 0.5))
 			}
 			for i := 0; i < n-top; i++ {
-				slots = append(slots, cell(top+i+1, i, n-top, 0.43, 0.43))
+				slots = append(slots, cell(top+i+1, i, n-top, 0.5, 0.5))
 			}
 		}
 		// The screen is recognised by the stat-row labels (全滅/撃墜/落下/自滅)

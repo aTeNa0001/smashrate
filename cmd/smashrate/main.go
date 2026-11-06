@@ -385,6 +385,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	chars := fs.String("chars", "", "comma-separated characters per column (P1,P2,...)")
 	ranks := fs.String("ranks", "", "comma-separated placements per column, e.g. 1,2")
 	names := fs.String("names", "", "comma-separated player names per column (the name tags)")
+	scale := fs.Int("scale", 0, "regions: also write up_*.png crops enlarged by this factor (what the OCR engine sees)")
 	fs.Parse(rest)
 
 	switch sub {
@@ -459,7 +460,24 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		}
 		b := img.Bounds()
 		save := func(name string, r config.Region) error {
-			return vision.SavePNG(filepath.Join(dir, name+".png"), vision.Crop(img, vision.Rect(b, r)))
+			crop := vision.Crop(img, vision.Rect(b, r))
+			if *scale > 1 {
+				up := ocr.Upscale(crop, *scale)
+				if err := vision.SavePNG(filepath.Join(dir, "up_"+name+".png"), up); err != nil {
+					return err
+				}
+				for _, thr := range []uint8{140, 180} {
+					if err := vision.SavePNG(filepath.Join(dir, fmt.Sprintf("bw%d_%s.png", thr, name)), ocr.Binarize(up, thr)); err != nil {
+						return err
+					}
+					if iso, ok := ocr.IsolateBright(up, thr, 12); ok {
+						if err := vision.SavePNG(filepath.Join(dir, fmt.Sprintf("iso%d_%s.png", thr, name)), iso); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			return vision.SavePNG(filepath.Join(dir, name+".png"), crop)
 		}
 		if err := save("screen", layout.Screen); err != nil {
 			return err
@@ -513,7 +531,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		}
 		fmt.Printf("results screen, %d players (%s)\n", r.Players, kind)
 		for _, s := range r.Slots {
-			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist)
+			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d, glyph %016x)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist, s.RankHash)
 		}
 		return nil
 	case "ocr":

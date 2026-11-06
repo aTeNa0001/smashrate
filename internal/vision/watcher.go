@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,52 +95,61 @@ func (w *Watcher) learn(kind, label string, hash uint64) {
 // next appearance is matched without OCR. placeholder is true for default
 // labels (プレイヤー1, コンピューター2, P1, CPU), which are remembered too.
 func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created, placeholder bool) {
-	text := w.recognize(crop)
-	clean := ocr.NormalizeName(text)
-	if clean == "" {
+	if w.ocr == nil {
 		return "", false, false
-	}
-	if ocr.IsPlaceholder(clean) {
-		w.learn(KindName, PlaceholderLabel, hash)
-		return "", false, true
 	}
 	players, _ := w.core.Players()
 	names := make([]string, 0, len(players))
 	for _, p := range players {
 		names = append(names, p.Name)
 	}
-	if m := ocr.MatchName(clean, names); m != "" {
-		name = m
-	} else {
-		p, err := w.core.GetOrCreatePlayer(clean)
-		if err != nil {
-			log.Printf("vision: create player %q: %v", clean, err)
-			return "", false, false
+	// Try the smooth enlargement first (best for kana), then the isolated
+	// ink; the first reading that is a placeholder or matches a known
+	// player wins, otherwise the first non-empty reading becomes a new player.
+	first := ""
+	for _, v := range ocr.Variants(crop) {
+		clean := ocr.NormalizeName(w.recognize(v))
+		if clean == "" {
+			continue
 		}
-		name, created = p.Name, true
+		if ocr.IsPlaceholder(clean) {
+			w.learn(KindName, PlaceholderLabel, hash)
+			return "", false, true
+		}
+		if m := ocr.MatchName(clean, names); m != "" {
+			w.learn(KindName, m, hash)
+			return m, false, false
+		}
+		if first == "" {
+			first = clean
+		}
 	}
-	w.learn(KindName, name, hash)
-	return name, created, false
+	if first == "" {
+		return "", false, false
+	}
+	p, err := w.core.GetOrCreatePlayer(first)
+	if err != nil {
+		log.Printf("vision: create player %q: %v", first, err)
+		return "", false, false
+	}
+	w.learn(KindName, p.Name, hash)
+	return p.Name, true, false
 }
 
-// readChar OCRs the fighter-name caption and learns its hash.
+// readChar OCRs the fighter-name caption and learns its hash. The isolated
+// ink variant reads the bold Latin captions best, so it is tried first.
 func (w *Watcher) readChar(crop image.Image, hash uint64) string {
-	key, ok := ocr.MatchCharacter(w.recognize(crop))
-	if !ok {
+	if w.ocr == nil {
 		return ""
 	}
-	w.learn(KindChar, key, hash)
-	return key
-}
-
-// readRank OCRs the placement badge and learns its hash.
-func (w *Watcher) readRank(crop image.Image, hash uint64) int {
-	n := ocr.ParseRank(w.recognize(crop))
-	if n == 0 {
-		return 0
+	vs := ocr.Variants(crop)
+	for i := len(vs) - 1; i >= 0; i-- {
+		if key, ok := ocr.MatchCharacter(w.recognize(vs[i])); ok {
+			w.learn(KindChar, key, hash)
+			return key
+		}
 	}
-	w.learn(KindRank, strconv.Itoa(n), hash)
-	return n
+	return ""
 }
 
 // LastFrame returns the most recent frame seen (nil before the first).
@@ -251,10 +259,9 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 			id := w.stash(KindChar, s.CharHash, img, Rect(b, slot.Char))
 			unknown = append(unknown, fmt.Sprintf("P%d キャラ → %s", s.Port, id))
 		}
+		// Placement numerals are matched by shape (built-in 1 and 2, the
+		// rest learned once); an unknown digit is stashed for `learn`.
 		rank := s.Rank
-		if rank == 0 {
-			rank = w.readRank(Crop(img, Rect(b, slot.Rank)), s.RankHash)
-		}
 		if rank == 0 {
 			id := w.stash(KindRank, s.RankHash, img, Rect(b, slot.Rank))
 			unknown = append(unknown, fmt.Sprintf("P%d 順位 → %s", s.Port, id))

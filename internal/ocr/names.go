@@ -31,7 +31,11 @@ func NormalizeName(text string) string {
 	return ""
 }
 
-var placeholderTag = regexp.MustCompile(`(?i)^(p|player|プレイヤー|プレイヤ|cpu|com|コンピューター|コンピュータ|コンピュー)[ -]?[1-8]?$`)
+var placeholderTag = regexp.MustCompile(`(?i)^(p|player|cpu|com)[ -]?[1-8]?$`)
+
+// placeholderWords are the game's Japanese default tags; OCR tends to
+// misread a kana or two (コンにユーター), so they are matched fuzzily.
+var placeholderWords = []string{"プレイヤー", "コンピューター"}
 
 // IsPlaceholder reports whether an OCR'd tag is the game's default label
 // (P1, プレイヤー1, CPU, コンピューター2, ...) rather than a person's name.
@@ -39,7 +43,21 @@ var placeholderTag = regexp.MustCompile(`(?i)^(p|player|プレイヤー|プレ�
 // neither may be registered as a player.
 func IsPlaceholder(text string) bool {
 	n := NormalizeName(text)
-	return n == "" || placeholderTag.MatchString(n)
+	if n == "" || placeholderTag.MatchString(n) {
+		return true
+	}
+	// strip a trailing player number
+	core := strings.TrimRight(n, "0123456789０-９")
+	if core == "" {
+		return true
+	}
+	for _, w := range placeholderWords {
+		d := Levenshtein(core, w)
+		if d <= 2 || (len([]rune(core)) >= 5 && d <= 3) {
+			return true
+		}
+	}
+	return false
 }
 
 // NormalizeJoined is NormalizeName over every line joined together, for
@@ -62,14 +80,22 @@ func MatchCharacter(text string) (string, bool) {
 	if ch, ok := characters.Resolve(joined); ok {
 		return ch.Key, true
 	}
-	names := make([]string, 0, len(characters.All))
+	// fighter captions are long and come from a closed list, so allow a
+	// quarter of the characters to be misread
+	best, bestDist := "", 1<<30
 	for _, c := range characters.All {
-		names = append(names, c.NameEN)
-	}
-	if m := MatchName(joined, names); m != "" {
-		if ch, ok := characters.Resolve(m); ok {
-			return ch.Key, true
+		d := Levenshtein(joined, NormalizeName(c.NameEN))
+		if d < bestDist {
+			best, bestDist = c.Key, d
 		}
+	}
+	n := len([]rune(joined))
+	allowed := n / 4
+	if allowed < 1 {
+		allowed = 1
+	}
+	if best != "" && bestDist <= allowed {
+		return best, true
 	}
 	return "", false
 }
@@ -126,8 +152,21 @@ func foldRune(r rune) rune {
 	if base, ok := dakutenBase[r]; ok {
 		return base
 	}
+	// small kana read as large (ュ vs ユ)
+	if big, ok := smallKana[r]; ok {
+		return big
+	}
 	return r
 }
+
+var smallKana = func() map[rune]rune {
+	m := map[rune]rune{}
+	small, big := []rune("ァィゥェォャュョッヮぁぃぅぇぉゃゅょっゎ"), []rune("アイウエオヤユヨツワあいうえおやゆよつわ")
+	for i := range small {
+		m[small[i]] = big[i]
+	}
+	return m
+}()
 
 var dakutenBase = func() map[rune]rune {
 	m := map[rune]rune{}

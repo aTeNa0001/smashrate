@@ -50,7 +50,7 @@ cooldown_seconds = 90
 # Hamming distance (0-64) allowed between a region hash and a learned template.
 screen_threshold = 10
 char_threshold = 12
-rank_threshold = 10
+rank_threshold = 12   # placement numerals are matched by shape; 1st/2nd are built in
 name_threshold = 10
 
 # Name-tag OCR: runs only for a tag never seen before, then the tag is
