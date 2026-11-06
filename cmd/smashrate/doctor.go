@@ -164,6 +164,27 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 		}
 	}
 
+	// ---- outbound internet (office networks: proxy / TLS inspection)
+	for _, probe := range []struct{ name, url, hint string }{
+		{"外向き HTTPS (Cloudflare)", "https://www.cloudflare.com/cdn-cgi/trace", "cloudflared が外に出られない。プロキシ必須なら HTTPS_PROXY を設定、証明書エラーなら社内の SSL 検査が原因"},
+		{"外向き HTTPS (Slack)", "https://slack.com/api/api.test", "Slack Socket Mode が外に出られない。上と同じ対処"},
+	} {
+		resp, err := (&http.Client{Timeout: 6 * time.Second}).Get(probe.url)
+		switch {
+		case err != nil:
+			add("FAIL", probe.name, err.Error(), probe.hint)
+		case resp.StatusCode == 407:
+			resp.Body.Close()
+			add("FAIL", probe.name, "407 Proxy Authentication Required", "プロキシ認証が必要。HTTPS_PROXY=http://user:pass@proxy:port を設定")
+		case resp.StatusCode >= 400:
+			resp.Body.Close()
+			add("WARN", probe.name, fmt.Sprintf("HTTP %d", resp.StatusCode), probe.hint)
+		default:
+			resp.Body.Close()
+			add("OK", probe.name, "HTTP "+resp.Status, "")
+		}
+	}
+
 	// ---- slack
 	if !cfg.Slack.Enabled {
 		add("SKIP", "Slack", "slack.enabled = false", "")
