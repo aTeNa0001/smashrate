@@ -127,8 +127,21 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 				add("SKIP", "キャプチャデバイス", "input_format "+cfg.Vision.InputFormat+" の一覧確認は未対応", "smashrate vision devices で確認")
 			}
 		}
-		// try to pull one frame if the device looks right
-		if src, err := vision.OpenFFmpeg(cfg.Vision); err == nil {
+		// A DirectShow device can be open in one process only. If serve is
+		// running it owns the device, so ask it for its latest frame instead
+		// of opening the device a second time.
+		snapURL := fmt.Sprintf("http://%s:%s/api/vision/snapshot", host, port)
+		if resp, err := (&http.Client{Timeout: 3 * time.Second}).Get(snapURL); err == nil {
+			resp.Body.Close()
+			switch resp.StatusCode {
+			case 200:
+				add("OK", "フレーム取得", "常駐プロセスが映像を受信中", "")
+			case 503:
+				add("FAIL", "フレーム取得", "常駐プロセスは起動しているが映像がまだ来ない", "Switch の電源とキャプチャボードの入力、USB 3.0 の挿し口を確認。タスクを再起動して再確認")
+			default:
+				add("WARN", "フレーム取得", "常駐プロセスの設定では vision が無効（設定変更後に再起動していない）", "schtasks /End /TN smashrate; schtasks /Run /TN smashrate")
+			}
+		} else if src, err := vision.OpenFFmpeg(cfg.Vision); err == nil {
 			done := make(chan error, 1)
 			go func() { _, err := src.Next(); done <- err }()
 			select {
@@ -136,7 +149,7 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 				if err == nil {
 					add("OK", "フレーム取得", fmt.Sprintf("%dx%d のフレームを受信", cfg.Vision.Width, cfg.Vision.Height), "")
 				} else {
-					add("FAIL", "フレーム取得", err.Error(), "デバイス名・input_args（解像度）を見直す")
+					add("FAIL", "フレーム取得", err.Error(), "EOF なら別のプログラム（OBS など）がデバイスを使用中の可能性。それ以外はデバイス名・input_args（解像度）を見直す")
 				}
 			case <-time.After(8 * time.Second):
 				add("FAIL", "フレーム取得", "8 秒待っても映像が来ない", "Switch の電源とキャプチャボードの入力を確認")
