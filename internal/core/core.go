@@ -591,6 +591,22 @@ func (c *Core) Recompute() error {
 	return tx.Commit()
 }
 
+// ResetMatches deletes every match and rating while keeping players and
+// learned vision templates (used after a trial run before the real start).
+func (c *Core) ResetMatches() error {
+	tx, err := c.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{`DELETE FROM rating_history`, `DELETE FROM rating_states`, `DELETE FROM entries`, `DELETE FROM matches`} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // DeleteMatch soft-deletes a match and recomputes every rating.
 func (c *Core) DeleteMatch(id int64) error {
 	res, err := c.db.Exec(`UPDATE matches SET deleted = 1 WHERE id = ? AND deleted = 0`, id)

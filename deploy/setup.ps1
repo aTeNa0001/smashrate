@@ -105,6 +105,10 @@ Write-Host "== 4/5 scheduled task" -ForegroundColor Cyan
 if ($NoTask) {
     Write-Host "skipped (-NoTask)"
 } else {
+    # an always-on box must not sleep or hibernate while plugged in
+    powercfg /change standby-timeout-ac 0 | Out-Null
+    powercfg /change hibernate-timeout-ac 0 | Out-Null
+    powercfg /change monitor-timeout-ac 10 | Out-Null
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir "install-task.ps1") -Exe $exe -WorkDir $Dir
     schtasks /Create /F /TN smashrate-backup /SC DAILY /ST 04:00 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Dir\backup.ps1`"" | Out-Null
 }

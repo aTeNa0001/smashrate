@@ -87,6 +87,13 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 
 	// ---- Windows specifics
 	if runtime.GOOS == "windows" {
+		if secs, ok := sleepTimeoutAC(); ok {
+			if secs == 0 {
+				add("OK", "スリープ", "電源接続時はスリープしない", "")
+			} else {
+				add("FAIL", "スリープ", fmt.Sprintf("%d 分でスリープする設定（常駐が止まる）", secs/60), "powercfg /change standby-timeout-ac 0")
+			}
+		}
 		switch sacState() {
 		case "0":
 			add("OK", "Smart App Control", "オフ", "")
@@ -260,6 +267,25 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// sleepTimeoutAC returns the plugged-in sleep timeout in seconds (0 = never).
+func sleepTimeoutAC() (int, bool) {
+	out, err := exec.Command("powercfg", "/query", "SCHEME_CURRENT", "SUB_SLEEP", "STANDBYIDLE").Output()
+	if err != nil {
+		return 0, false
+	}
+	// the AC line comes first in every locale: "... AC ...: 0x00000000"
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "AC") && strings.Contains(line, "0x") {
+			hex := line[strings.LastIndex(line, "0x")+2:]
+			var v int
+			if _, err := fmt.Sscanf(strings.TrimSpace(hex), "%x", &v); err == nil {
+				return v, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // sacState reads Smart App Control's state: "0" off, "1" on, "2" evaluation.

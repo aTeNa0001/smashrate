@@ -52,6 +52,7 @@ Commands:
   rename <old> <new>          fix a misread player name
   merge <duplicate> <keep>    merge a duplicate player into another and recompute
   recompute                   rebuild every rating from the match history
+  reset-matches --yes         delete all matches and ratings, keep players and learned templates (after a trial run)
   vision devices              list capture devices seen by ffmpeg
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
   vision regions -image f [-players N] [-mode team]
@@ -131,6 +132,12 @@ func main() {
 		err = c.Recompute()
 		if err == nil {
 			fmt.Println("recomputed")
+		}
+	case "reset-matches":
+		if len(args) != 1 || args[0] != "--yes" {
+			err = errors.New("this deletes every match and rating (players and learned templates are kept); run: reset-matches --yes")
+		} else if err = c.ResetMatches(); err == nil {
+			fmt.Println("all matches and ratings deleted; players and vision templates kept")
 		}
 	case "vision":
 		err = visionCmd(cfg, c, args)

@@ -233,6 +233,29 @@ func TestRenameAndMerge(t *testing.T) {
 	}
 }
 
+func TestResetMatches(t *testing.T) {
+	c := openTest(t)
+	if _, err := c.RecordMatch(MatchInput{Entries: []EntryInput{e("A", "mario", 1, 1), e("B", "", 2, 2)}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.AddTemplate("name", "A", 42)
+	if err := c.ResetMatches(); err != nil {
+		t.Fatal(err)
+	}
+	if ms, _ := c.Matches(10, 0); len(ms) != 0 {
+		t.Fatal("matches should be gone")
+	}
+	if lb, _ := c.Leaderboard(ScopeOverall); len(lb) != 0 {
+		t.Fatal("ratings should be gone")
+	}
+	if ps, _ := c.Players(); len(ps) != 2 {
+		t.Fatalf("players should be kept, got %d", len(ps))
+	}
+	if ts, _ := c.Templates("name"); len(ts) != 1 {
+		t.Fatal("templates should be kept")
+	}
+}
+
 func TestTemplates(t *testing.T) {
 	c := openTest(t)
 	if err := c.AddTemplate("char", "mario", 0xFFFFFFFFFFFFFFFF); err != nil {
