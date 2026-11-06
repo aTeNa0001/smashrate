@@ -47,9 +47,16 @@ func IsPlaceholder(text string) bool {
 		return true
 	}
 	// strip a trailing player number
-	core := strings.TrimRight(n, "0123456789０-９")
+	core := strings.TrimRight(n, "0123456789０-９-ー・")
 	if core == "" {
 		return true
+	}
+	// fragments that only the default tags contain (narrow panels cut the
+	// first kana off: ンピューター, 心ュータ, レイヤー)
+	for _, frag := range []string{"ピュータ", "ピューター", "ュータ", "ユータ", "ユーター", "コンピ", "レイヤ", "プレイ"} {
+		if strings.Contains(core, frag) && len([]rune(core)) <= 9 {
+			return true
+		}
 	}
 	for _, w := range placeholderWords {
 		d := Levenshtein(core, w)
@@ -80,17 +87,24 @@ func MatchCharacter(text string) (string, bool) {
 	if ch, ok := characters.Resolve(joined); ok {
 		return ch.Key, true
 	}
-	// fighter captions are long and come from a closed list, so allow a
-	// quarter of the characters to be misread
+	// Fighter captions come from a closed list (English names plus the
+	// Japanese market's spellings kept as aliases), so a third of the
+	// characters may be misread and the nearest name still wins.
 	best, bestDist := "", 1<<30
 	for _, c := range characters.All {
-		d := Levenshtein(joined, NormalizeName(c.NameEN))
-		if d < bestDist {
-			best, bestDist = c.Key, d
+		cands := append([]string{c.NameEN}, c.Aliases...)
+		for _, cand := range cands {
+			if !isASCII(cand) {
+				continue
+			}
+			d := Levenshtein(joined, NormalizeName(cand))
+			if d < bestDist {
+				best, bestDist = c.Key, d
+			}
 		}
 	}
 	n := len([]rune(joined))
-	allowed := n / 4
+	allowed := n / 3
 	if allowed < 1 {
 		allowed = 1
 	}
@@ -98,6 +112,15 @@ func MatchCharacter(text string) (string, bool) {
 		return best, true
 	}
 	return "", false
+}
+
+func isASCII(s string) bool {
+	for _, r := range s {
+		if r > 127 {
+			return false
+		}
+	}
+	return true
 }
 
 var rankDigit = regexp.MustCompile(`[1-8１-８]`)

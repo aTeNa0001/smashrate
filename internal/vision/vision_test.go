@@ -23,12 +23,38 @@ func paint(img *image.RGBA, r image.Rectangle, seed int64) {
 	}
 }
 
+// paintGlyph draws a bright digit-like shape (a tall block with a
+// seed-dependent notch) on a dark background, as the placement numeral
+// isolation expects. Different seeds give clearly different shapes.
+func paintGlyph(img *image.RGBA, r image.Rectangle, seed int64) {
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			img.Set(x, y, color.RGBA{30, 30, 30, 255})
+		}
+	}
+	w, h := r.Dx(), r.Dy()
+	gw, gh := w*45/100, h*70/100
+	x0, y0 := r.Min.X+(w-gw)/2, r.Min.Y+(h-gh)/2
+	notchX := x0 + int(seed%5)*gw/6
+	notchY := y0 + int(seed%7)*gh/8
+	for y := y0; y < y0+gh; y++ {
+		for x := x0; x < x0+gw; x++ {
+			if x >= notchX && x < notchX+gw/4 && y >= notchY && y < notchY+gh/4 {
+				continue // the notch stays dark
+			}
+			img.Set(x, y, color.RGBA{230, 230, 230, 255})
+		}
+	}
+}
+
 func frame(cfg config.VisionConfig, players int, charSeeds, rankSeeds []int64, nameSeeds ...int64) *image.RGBA {
 	return frameMode(cfg, players, "", charSeeds, rankSeeds, nameSeeds...)
 }
 
 func frameMode(cfg config.VisionConfig, players int, mode string, charSeeds, rankSeeds []int64, nameSeeds ...int64) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	// same size as the real analysis frame, so that a region has the same
+	// pixel size in every column (rounding differs at other sizes)
+	img := image.NewRGBA(image.Rect(0, 0, 640, 360))
 	paint(img, img.Bounds(), 999) // background noise
 	layout, _ := cfg.Layout(players, mode)
 	screenSeed := 1000 + int64(players)
@@ -38,7 +64,7 @@ func frameMode(cfg config.VisionConfig, players int, mode string, charSeeds, ran
 	paint(img, Rect(img.Bounds(), layout.Screen), screenSeed)
 	for i, s := range layout.Slots {
 		paint(img, Rect(img.Bounds(), s.Char), charSeeds[i])
-		paint(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])
+		paintGlyph(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])
 		if i < len(nameSeeds) {
 			paint(img, Rect(img.Bounds(), s.Name), nameSeeds[i])
 		}
@@ -117,7 +143,7 @@ func TestTeachDetectAndRecord(t *testing.T) {
 	}
 
 	// non-results frame is ignored
-	noise := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	noise := image.NewRGBA(image.Rect(0, 0, 640, 360))
 	paint(noise, noise.Bounds(), 4242)
 	if _, ok := w.det.Detect(noise); ok {
 		t.Fatal("noise should not be detected as a results screen")

@@ -54,6 +54,13 @@ func TestMatchCharacterAndRank(t *testing.T) {
 		"DARK  SAMUS":       "dark_samus",
 		"ROSALINA & LUMA":   "rosalina",
 		"PONKEY | KONG":     "donkey_kong",
+		"K00 PA":            "bowser",
+		"MARJO":             "mario",
+		"PACKUN\nド[0ER":     "piranha_plant",
+		"PIKACHUj":          "pikachu",
+		"IHOMURA'":          "pyra_mythra",
+		"zELDA 、":           "zelda",
+		"BAN」0\n& KAZOOJE":  "banjo_kazooie",
 		"8A2」0\n& KAZOOIE":  "banjo_kazooie",
 		"nothing like this": "",
 		"":                  "",
@@ -71,7 +78,7 @@ func TestMatchCharacterAndRank(t *testing.T) {
 }
 
 func TestIsPlaceholder(t *testing.T) {
-	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", "コ ン に ユ ー タ ー 2", "ン ヒ ュ ー タ ー 4", "フ レ イ ヤ ー 1", ""} {
+	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", "コ ン に ユ ー タ ー 2", "ン ヒ ュ ー タ ー 4", "フ レ イ ヤ ー 1", "ン に ユ ー タ -", "心 ュ ー タ -", "1 ン に ユ ー タ ー 2", ""} {
 		if !IsPlaceholder(s) {
 			t.Fatalf("%q should be a placeholder", s)
 		}
@@ -127,8 +134,8 @@ func TestGlyphSignature(t *testing.T) {
 		}
 		return img
 	}
-	a, ok1 := GlyphSignature(draw(40, 40, 10, 18))
-	b, ok2 := GlyphSignature(draw(100, 60, 70, 90))
+	a, ok1 := GlyphSignature(draw(40, 40, 10, 24))
+	b, ok2 := GlyphSignature(draw(100, 60, 60, 81))
 	if !ok1 || !ok2 {
 		t.Fatal("expected glyphs")
 	}

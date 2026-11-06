@@ -102,22 +102,46 @@ func (d *Detector) TemplateCount(kind string) int { return len(d.templates[kind]
 // more than one entry per label. Further digits are learned once (Slack
 // `learn` or `vision teach -ranks`).
 var builtinRanks = []core.Template{
-	{Kind: KindRank, Label: "1", Hash: 0xd630f0f030303030},
+	{Kind: KindRank, Label: "1", Hash: 0x0f3fff4f0f0f0f0f},
+	{Kind: KindRank, Label: "1", Hash: 0x0f1fff6f0f0f0f0f},
+	{Kind: KindRank, Label: "1", Hash: 0x0f1fff7f0f1f1f1e},
+	{Kind: KindRank, Label: "1", Hash: 0x1f3fffdf1f1f1f1e},
+	{Kind: KindRank, Label: "2", Hash: 0x1e7f670e3c70fffe},
 	{Kind: KindRank, Label: "2", Hash: 0x1e7f670f3c70fffe},
-	{Kind: KindRank, Label: "2", Hash: 0x1e3f33071cf8bffe},
+	{Kind: KindRank, Label: "2", Hash: 0x3e7fe70e3c70fffe},
+	{Kind: KindRank, Label: "3", Hash: 0x1c7eff071e3e3f00},
+	{Kind: KindRank, Label: "3", Hash: 0x3e7fe7073e3f0700},
+	{Kind: KindRank, Label: "4", Hash: 0x0e1e3e6e4efffe0e},
+	{Kind: KindRank, Label: "4", Hash: 0x0e1e3e2e6efffe06},
+	{Kind: KindRank, Label: "4", Hash: 0x0e1e3e6eeeffee0e},
+	{Kind: KindRank, Label: "5", Hash: 0x1e7ee0fe6707ff7c},
+	{Kind: KindRank, Label: "6", Hash: 0x1e7ee0fef7e37f3c},
+	{Kind: KindRank, Label: "7", Hash: 0x1fff0e1c38383870},
 }
 
-// classifyRank matches a numeral signature against learned and built-in ones.
+// classifyRank matches a numeral signature against learned and built-in
+// ones. Digits 5 and 6 are only ~8 bits apart on the 8x8 grid, so besides
+// the distance threshold the best label must beat every other label by a
+// margin; otherwise the numeral is reported unknown (and stashed to learn).
 func (d *Detector) classifyRank(sig uint64) (string, int, bool) {
 	best, bestDist := "", 65
+	second := 65 // nearest template with a different label
 	for _, list := range [][]core.Template{d.templates[KindRank], builtinRanks} {
 		for _, t := range list {
-			if dist := Hamming(t.Hash, sig); dist < bestDist {
+			dist := Hamming(t.Hash, sig)
+			switch {
+			case dist < bestDist:
+				if t.Label != best {
+					second = bestDist
+				}
 				best, bestDist = t.Label, dist
+			case t.Label != best && dist < second:
+				second = dist
 			}
 		}
 	}
-	return best, bestDist, best != "" && bestDist <= d.cfg.RankThreshold
+	ok := best != "" && bestDist <= d.cfg.RankThreshold && second-bestDist >= 3
+	return best, bestDist, ok
 }
 
 // classify returns the nearest template label within threshold.

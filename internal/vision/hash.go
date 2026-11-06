@@ -13,25 +13,27 @@ package vision
 import (
 	"image"
 	"image/color"
+	"math"
 	"math/bits"
 
 	"github.com/aTeNa0001/smashrate/internal/config"
 )
 
-// Rect converts a fractional region into pixel coordinates of bounds.
+// Rect converts a fractional region into pixel coordinates of bounds. The
+// size is derived from W/H alone so that the same region shape yields the
+// same pixel size in every column, whatever the column's offset.
 func Rect(bounds image.Rectangle, r config.Region) image.Rectangle {
 	w, h := float64(bounds.Dx()), float64(bounds.Dy())
-	x0 := bounds.Min.X + int(r.X*w)
-	y0 := bounds.Min.Y + int(r.Y*h)
-	x1 := bounds.Min.X + int((r.X+r.W)*w)
-	y1 := bounds.Min.Y + int((r.Y+r.H)*h)
-	if x1 <= x0 {
-		x1 = x0 + 1
+	x0 := bounds.Min.X + int(math.Round(r.X*w))
+	y0 := bounds.Min.Y + int(math.Round(r.Y*h))
+	pw, ph := int(math.Round(r.W*w)), int(math.Round(r.H*h))
+	if pw < 1 {
+		pw = 1
 	}
-	if y1 <= y0 {
-		y1 = y0 + 1
+	if ph < 1 {
+		ph = 1
 	}
-	return image.Rect(x0, y0, x1, y1).Intersect(bounds)
+	return image.Rect(x0, y0, x0+pw, y0+ph).Intersect(bounds)
 }
 
 // luma returns the perceived brightness of a pixel.

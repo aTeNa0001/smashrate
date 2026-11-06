@@ -219,21 +219,152 @@ func isNumeralInk(r, g, b uint8) bool {
 	return !green
 }
 
-// isolateNumeral binarizes with the numeral colour rule, then crops to the ink.
-func isolateNumeral(img image.Image) (*image.Gray, bool) {
-	b := img.Bounds()
-	bw := image.NewGray(image.Rect(0, 0, b.Dx(), b.Dy()))
-	for y := 0; y < b.Dy(); y++ {
-		for x := 0; x < b.Dx(); x++ {
-			r, g, bl, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
-			v := uint8(255)
-			if isNumeralInk(uint8(r>>8), uint8(g>>8), uint8(bl>>8)) {
-				v = 0
-			}
-			bw.Pix[bw.PixOffset(x, y)] = v
+// isNumeralColour is stricter: the numeral itself is either silver (near
+// grey) or gold (yellow with little blue). Skin, hair and most portrait
+// colours fail it, which separates the digit from the fighter behind it.
+func isNumeralColour(r, g, b uint8) bool {
+	mx, mn := int(r), int(r)
+	for _, v := range []int{int(g), int(b)} {
+		if v > mx {
+			mx = v
+		}
+		if v < mn {
+			mn = v
 		}
 	}
-	return isolate(bw, 0)
+	silver := mx-mn <= 40 && mx >= 120
+	gold := int(r) >= 170 && int(g) >= 140 && int(b) <= 110 && int(r)-int(g) <= 70
+	bronze := int(r) >= 150 && int(g) >= 80 && int(g) <= 175 && int(b) <= 100 && int(r)-int(g) > 40 && int(r)-int(g) <= 120 // 3rd place
+	return silver || gold || bronze
+}
+
+// NumeralMask exposes the numeral isolation for inspection (vision regions).
+func NumeralMask(img image.Image) (*image.Gray, bool) { return isolateNumeral(img) }
+
+// isolateNumeral finds the placement numeral in a crop that may also
+// contain part of the portrait, the series icon or the panel's edge. The
+// numeral is bright silver/gold ink surrounded by a dark outline, so it
+// forms its own connected component; among the bright components the one
+// shaped like a digit (tall, roughly half as wide as high, a good part of
+// the crop's height) with the largest area is taken, and only its pixels
+// go into the returned black-on-white mask.
+func isolateNumeral(img image.Image) (*image.Gray, bool) {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	ink := make([]bool, w*h)
+	coloured := make([]bool, w*h)
+	dark := make([]bool, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r, g, bl, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			r8, g8, b8 := uint8(r>>8), uint8(g>>8), uint8(bl>>8)
+			ink[y*w+x] = isNumeralInk(r8, g8, b8)
+			coloured[y*w+x] = isNumeralColour(r8, g8, b8)
+			// the outline is black but anti-aliased, and 1st place's laurels
+			// (green) may touch the numeral: both count as "outline"
+			green := int(g8) > int(r8)*115/100 && int(g8) > int(b8)*3/2
+			dark[y*w+x] = (299*int(r8)+587*int(g8)+114*int(b8))/1000 < 110 || green
+		}
+	}
+	label := make([]int32, w*h)
+	type comp struct{ minX, minY, maxX, maxY, area, metallic, border, borderDark int }
+	var comps []comp
+	stack := make([]int, 0, 256)
+	for start := range ink {
+		if !ink[start] || label[start] != 0 {
+			continue
+		}
+		id := int32(len(comps) + 1)
+		c := comp{minX: w, minY: h, maxX: -1, maxY: -1}
+		stack = append(stack[:0], start)
+		label[start] = id
+		for len(stack) > 0 {
+			p := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			px, py := p%w, p/w
+			c.area++
+			if coloured[p] {
+				c.metallic++
+			}
+			if px < c.minX {
+				c.minX = px
+			}
+			if px > c.maxX {
+				c.maxX = px
+			}
+			if py < c.minY {
+				c.minY = py
+			}
+			if py > c.maxY {
+				c.maxY = py
+			}
+			for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+				nx, ny := px+d[0], py+d[1]
+				if nx < 0 || ny < 0 || nx >= w || ny >= h {
+					c.border++ // the crop edge counts as "not outlined"
+					continue
+				}
+				q := ny*w + nx
+				if ink[q] {
+					if label[q] == 0 {
+						label[q] = id
+						stack = append(stack, q)
+					}
+					continue
+				}
+				// a pixel just outside the component: the numeral's black outline
+				c.border++
+				if dark[q] {
+					c.borderDark++
+				}
+			}
+		}
+		comps = append(comps, c)
+	}
+	// Among digit-shaped candidates prefer the one most completely ringed by
+	// the outline (a portrait's silver armour is bright and large but its
+	// surroundings are not uniformly dark); area breaks ties.
+	best, bestScore := -1, -1.0
+	for i, c := range comps {
+		cw, ch := c.maxX-c.minX+1, c.maxY-c.minY+1
+		if ch < h*45/100 || ch > h*98/100 {
+			continue // too short to be the numeral, or the whole crop
+		}
+		ratio := float64(cw) / float64(ch)
+		if ratio < 0.3 || ratio > 1.0 {
+			continue
+		}
+		if c.area*10 < cw*ch*3 { // digits fill at least 30% of their box
+			continue
+		}
+		if c.metallic*10 < c.area*7 { // mostly silver or gold, unlike skin or hair
+			continue
+		}
+		if c.border == 0 || c.borderDark*2 < c.border { // ringed by the dark outline
+			continue
+		}
+		score := float64(c.borderDark)/float64(c.border) + float64(c.area)/float64(w*h)*0.1
+		if score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	if best < 0 {
+		return nil, false
+	}
+	c := comps[best]
+	out := image.NewGray(image.Rect(0, 0, c.maxX-c.minX+1, c.maxY-c.minY+1))
+	for i := range out.Pix {
+		out.Pix[i] = 255
+	}
+	id := int32(best + 1)
+	for y := c.minY; y <= c.maxY; y++ {
+		for x := c.minX; x <= c.maxX; x++ {
+			if label[y*w+x] == id {
+				out.Pix[out.PixOffset(x-c.minX, y-c.minY)] = 0
+			}
+		}
+	}
+	return out, true
 }
 
 func isolate(bw *image.Gray, margin int) (*image.Gray, bool) {

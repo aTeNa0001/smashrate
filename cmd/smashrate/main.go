@@ -476,6 +476,13 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 						}
 					}
 				}
+				if strings.Contains(name, "rank") {
+					if m, ok := ocr.NumeralMask(crop); ok {
+						if err := vision.SavePNG(filepath.Join(dir, "num_"+name+".png"), ocr.Upscale(m, *scale)); err != nil {
+							return err
+						}
+					}
+				}
 			}
 			return vision.SavePNG(filepath.Join(dir, name+".png"), crop)
 		}

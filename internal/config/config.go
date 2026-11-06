@@ -131,56 +131,69 @@ func Default() Config {
 		Vision: VisionConfig{
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
 			Width: 640, Height: 360, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
-			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 12, NameThreshold: 10,
+			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 6, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
 		},
 	}
 }
 
-// defaultLayouts are geometries for Smash Ultimate's results screen (16:9),
-// measured on a real 4-player capture: each column shows, from the top, the
-// fighter name caption (English, up to two lines) with the placement number
-// at the column's top right, then the port badge and the player's name tag,
-// then the portrait and the stat rows. One column per player for 2-4
-// players, two rows of up to four columns for 5-8 players. Tune with
+// panelSpec is where the player panels sit for one player count, measured
+// on real 640x360 captures of every count from 2 to 8: a single row of
+// panels whose left edge is x0 + i*step and whose width is w (fractions of
+// the frame). With 2, 3 and 5 players the row is centred with gaps; with
+// 4 and 6-8 it spans the full width. For up to 4 players the placement
+// numeral sits at the panel's top right; from 5 players on it moves down
+// onto the portrait.
+type panelSpec struct {
+	x0, step, w float64
+	rankOnTop   bool
+}
+
+var panelSpecs = map[int]panelSpec{
+	2: {0.133, 0.414, 0.31, true},
+	3: {0.016, 0.327, 0.31, true},
+	4: {0.0, 0.25, 0.25, true},
+	5: {0.055, 0.184, 0.155, false},
+	6: {0.0, 1.0 / 6, 1.0 / 6, false},
+	7: {0.0, 1.0 / 7, 1.0 / 7, false},
+	8: {0.0, 0.125, 0.125, false},
+}
+
+// defaultLayouts are geometries for Smash Ultimate's results screen (16:9).
+// Each panel shows, from the top, the fighter name caption (English, up to
+// two lines) left of the series icon, then the "1P"/"CP" badge with the
+// player's name tag, then the portrait with the placement numeral, then the
+// stat rows. The panels are slanted, so rows sit a little lower in panels
+// further right; the regions are tall enough to cover every panel. Tune with
 // `smashrate vision regions` against a screenshot when they do not fit.
 func defaultLayouts() []Layout {
-	// column i of cols within a band spanning [y0, y0+h) of the frame
-	cell := func(port, i, cols int, y0, h float64) Slot {
-		w := 1.0 / float64(cols)
-		x := float64(i) * w
-		return Slot{
-			Port: port,
-			// The panels are slanted, so rows sit ~3% lower per column to the
-			// right; the regions are tall enough to cover every column.
-			// "DONKEY KONG" caption (up to two lines), top left, left of the series icon
-			Char: Region{X: x + w*0.02, Y: y0 + h*0.045, W: w * 0.56, H: h * 0.115},
-			// placement numeral (laurels for 1st), top right
-			Rank: Region{X: x + w*0.72, Y: y0 + h*0.02, W: w * 0.28, H: h * 0.16},
-			// name tag right of the "1P"/"CP" badge
-			Name: Region{X: x + w*0.22, Y: y0 + h*0.155, W: w * 0.48, H: h * 0.06},
-		}
-	}
 	var out []Layout
 	for n := 2; n <= 8; n++ {
+		ps := panelSpecs[n]
 		var slots []Slot
-		if n <= 4 {
-			for i := 0; i < n; i++ {
-				slots = append(slots, cell(i+1, i, n, 0, 1.0))
+		for i := 0; i < n; i++ {
+			x, w := ps.x0+float64(i)*ps.step, ps.w
+			s := Slot{Port: i + 1}
+			if ps.rankOnTop {
+				// wide panels: caption left of the series icon and numeral,
+				// name tag on the same row as the "1P"/"CP" badge
+				s.Char = Region{X: x + w*0.03, Y: 0.045, W: w * 0.55, H: 0.11}
+				s.Name = Region{X: x + w*0.20, Y: 0.155, W: w * 0.47, H: 0.07}
+				s.Rank = Region{X: x + w*0.68, Y: 0.02, W: w * 0.32, H: 0.16}
+			} else {
+				// narrow panels: caption spans the panel (the icon sits behind
+				// it), the badge is above the tag, the numeral is on the portrait
+				s.Char = Region{X: x + w*0.02, Y: 0.045, W: w * 0.96, H: 0.11}
+				s.Name = Region{X: x + w*0.02, Y: 0.16, W: w * 0.96, H: 0.065}
+				s.Rank = Region{X: x + w*0.45, Y: 0.36, W: w * 0.55, H: 0.17}
 			}
-		} else {
-			top := (n + 1) / 2
-			for i := 0; i < top; i++ {
-				slots = append(slots, cell(i+1, i, top, 0, 0.5))
-			}
-			for i := 0; i < n-top; i++ {
-				slots = append(slots, cell(top+i+1, i, n-top, 0.5, 0.5))
-			}
+			slots = append(slots, s)
 		}
 		// The screen is recognised by the stat-row labels (全滅/撃墜/落下/自滅)
-		// down the left edge, which never change; the numbers next to them do.
-		screen := Region{X: 0.0, Y: 0.56, W: 0.09, H: 0.37}
+		// down the left edge of the first panel; they never change, the
+		// numbers next to them do.
+		screen := Region{X: ps.x0, Y: 0.56, W: ps.w * 0.3, H: 0.37}
 		out = append(out, Layout{Players: n, Screen: screen, Slots: slots})
 		// Team battles (3+ players) show a differently arranged results screen.
 		// The same geometry is only a placeholder until tuned on a real screenshot.
@@ -203,6 +216,10 @@ func Load(path string) (Config, error) {
 		}
 		return cfg, err
 	}
+	// Decoding an array of tables into a pre-filled slice merges element by
+	// element with the defaults (a user's 3rd layout would inherit fields of
+	// the 3rd default). Layouts in the file replace the defaults wholesale.
+	cfg.Vision.Layouts = nil
 	if _, err := toml.Decode(string(b), &cfg); err != nil {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
