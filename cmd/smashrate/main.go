@@ -56,9 +56,10 @@ Commands:
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
   vision regions -image f [-players N] [-mode team]
                               write crops of every layout region (for tuning smashrate.toml)
-  vision teach -image f -players N [-mode team]
-                              learn what the results screen looks like (once per player count / format);
-                              characters, placements and name tags are then learned automatically via OCR.
+  vision teach -image f -players N
+                              learn what the results screen looks like (once per player count);
+                              characters, placements and name tags are then learned automatically.
+                              Team battles need nothing extra: tied placements mean one team.
                               Optional: -chars a,b -ranks 1,2 -names Taro,Hanako to pre-teach them.
   vision test -image f        run the detector on a screenshot and print what it sees
   vision ocr -image f         run the name-tag OCR engine on an image and print the text

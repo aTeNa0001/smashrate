@@ -194,14 +194,10 @@ func defaultLayouts() []Layout {
 		// down the left edge of the first panel; they never change, the
 		// numbers next to them do.
 		screen := Region{X: ps.x0, Y: 0.56, W: ps.w * 0.3, H: 0.37}
+		// Team battles use the same screen; teammates are told apart by
+		// sharing a placement, so no separate layout is needed. A layout with
+		// mode = "team" can still be configured if a build ever differs.
 		out = append(out, Layout{Players: n, Screen: screen, Slots: slots})
-		// Team battles (3+ players) show a differently arranged results screen.
-		// The same geometry is only a placeholder until tuned on a real screenshot.
-		if n >= 3 {
-			teamSlots := make([]Slot, len(slots))
-			copy(teamSlots, slots)
-			out = append(out, Layout{Players: n, Mode: "team", Screen: screen, Slots: teamSlots})
-		}
 	}
 	return out
 }

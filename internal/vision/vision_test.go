@@ -415,12 +415,13 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 	cfg.CooldownSeconds = 1
 	cfg.OCR.Engine = "none"
 
-	// a 2v2 team results screen: columns A,B (1st) and C,D (2nd)
-	tf := frameMode(cfg, 4, "team", []int64{11, 12, 13, 14}, []int64{21, 21, 22, 22}, 41, 42, 43, 44)
-	if err := Teach(c, cfg, tf, 4, "team", []string{"mario", "link", "fox", "kirby"}, []string{"1", "1", "2", "2"}, []string{"A", "B", "C", "D"}); err != nil {
+	// a 2v2 result on the ordinary 4-player screen: columns A,B (1st) and
+	// C,D (2nd) share placements, which is what makes it a team battle
+	tf := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 21, 22, 22}, 41, 42, 43, 44)
+	if err := Teach(c, cfg, tf, 4, "", []string{"mario", "link", "fox", "kirby"}, []string{"1", "1", "2", "2"}, []string{"A", "B", "C", "D"}); err != nil {
 		t.Fatal(err)
 	}
-	// and a 4-player free-for-all screen with the same people, taught under its own label
+	// and a 4-player free-for-all with the same people and distinct placements
 	ff := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 22, 23, 24}, 41, 42, 43, 44)
 	if err := Teach(c, cfg, ff, 4, "", nil, []string{"1", "2", "3", "4"}, nil); err != nil {
 		t.Fatal(err)
@@ -446,11 +447,21 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 		t.Fatalf("winners = %v", w)
 	}
 
-	// the free-for-all screen is told apart by its own screen template
+	// distinct placements on the same screen: a free-for-all
 	w.Process(ff)
 	ms, _ = c.Matches(10, 0)
 	if len(ms) != 2 || ms[0].Mode != core.ModeFFA {
-		t.Fatalf("ffa screen should record a free-for-all: %+v", ms)
+		t.Fatalf("distinct placements should record a free-for-all: %+v", ms)
+	}
+
+	// everyone tied: nothing to rate, nothing recorded
+	var msgs []string
+	w.notify = func(s string) { msgs = append(msgs, s) }
+	w.lastSeen = ""
+	all := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 21, 21, 21}, 41, 42, 43, 44)
+	w.Process(all)
+	if ms, _ = c.Matches(10, 0); len(ms) != 2 || len(msgs) != 1 || !strings.Contains(msgs[0], "全員が同順位") {
+		t.Fatalf("all tied: matches=%d msgs=%v", len(ms), msgs)
 	}
 }
 

@@ -65,9 +65,9 @@ timeout_seconds = 15
 # Layouts are fractions of the frame (0..1). The defaults are a starting point;
 # tune them with `smashrate vision regions -image shot.png -players 2` until the
 # crops in data/regions/ show exactly the fighter portrait, the placement badge
-# and the player's name tag. The team-battle results screen arranges players
-# differently, so it has its own layouts with mode = "team" (tune and teach them
-# from a team-battle screenshot with -mode team).
+# and the player's name tag. Team battles use the same screen: players sharing
+# a placement are recorded as one team (mode = "team" layouts exist only for a
+# build whose team screen differs).
 # [[vision.layouts]]
 # players = 2
 # mode = ""        # "" = 1on1 / free-for-all, "team" = team battle

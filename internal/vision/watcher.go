@@ -266,13 +266,31 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 			id := w.stash(KindRank, s.RankHash, img, Rect(b, slot.Rank))
 			unknown = append(unknown, fmt.Sprintf("P%d 順位 → %s", s.Port, id))
 		}
-		// 1on1 / free-for-all: everyone is their own team. Team battle: the
-		// results screen gives teammates the same placement, so rank = team.
-		team := s.Port
-		if r.Team {
-			team = rank
+		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: rank, Character: char})
+	}
+
+	// Team battle and free-for-all share the same results screen; what tells
+	// them apart is that teammates get the same placement. So players who
+	// share a rank are recorded as one team, everyone else as their own.
+	// (A timed free-for-all can tie too, which is accepted as a team result.)
+	seenRank := map[int]int{}
+	for _, e := range in.Entries {
+		seenRank[e.Rank]++
+	}
+	tied := false
+	for rk, n := range seenRank {
+		if rk > 0 && n > 1 {
+			tied = true
 		}
-		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: team, Rank: rank, Character: char})
+	}
+	if tied || r.Team {
+		for i := range in.Entries {
+			in.Entries[i].Team = in.Entries[i].Rank
+		}
+	}
+	if tied && len(seenRank) == 1 {
+		w.notify("全員が同順位のため記録しません（チーム分けが判定できません）。")
+		return
 	}
 
 	var msg []string
