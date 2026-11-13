@@ -62,7 +62,7 @@ Commands:
                               characters, placements and name tags are then learned automatically.
                               Team battles need nothing extra: tied placements mean one team.
                               Optional: -chars a,b -ranks 1,2 -names Taro,Hanako to pre-teach them.
-  vision test -image f        run the detector on a screenshot and print what it sees
+  vision test -image f [-ocr] run the detector on a screenshot and print what it sees (-ocr: also what OCR reads)
   vision ocr -image f         run the name-tag OCR engine on an image and print the text
   vision watch                run only the capture watcher (no web server)
 `
@@ -394,6 +394,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	ranks := fs.String("ranks", "", "comma-separated placements per column, e.g. 1,2")
 	names := fs.String("names", "", "comma-separated player names per column (the name tags)")
 	scale := fs.Int("scale", 0, "regions: also write up_*.png crops enlarged by this factor (what the OCR engine sees)")
+	withOCR := fs.Bool("ocr", false, "test: also run the OCR engine on each column's name tag and caption and print what it reads")
 	fs.Parse(rest)
 
 	switch sub {
@@ -547,6 +548,36 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		fmt.Printf("results screen, %d players (%s)\n", r.Players, kind)
 		for _, s := range r.Slots {
 			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d, glyph %016x)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist, s.RankHash)
+		}
+		if *withOCR {
+			eng, err := ocr.New(cfg.Vision.OCR)
+			if err != nil {
+				return err
+			}
+			if eng == nil {
+				return errors.New("ocr is disabled in config (vision.ocr.engine)")
+			}
+			b := img.Bounds()
+			for i, slot := range r.Layout.Slots {
+				if i >= len(r.Slots) {
+					break
+				}
+				var names, caps []string
+				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.Name))) {
+					t, _ := eng.Recognize(v)
+					names = append(names, fmt.Sprintf("%q", ocr.NormalizeName(t)))
+				}
+				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.Char))) {
+					t, _ := eng.Recognize(v)
+					key, _ := ocr.MatchCharacter(t)
+					caps = append(caps, fmt.Sprintf("%q→%s", ocr.NormalizeJoined(t), key))
+				}
+				verdict := "new player"
+				if ocr.IsPlaceholder(strings.Trim(names[0], `"`)) {
+					verdict = "placeholder/CPU"
+				}
+				fmt.Printf("  P%d  OCR name: %s (%s)   caption: %s\n", slot.Port, strings.Join(names, " / "), verdict, strings.Join(caps, " / "))
+			}
 		}
 		return nil
 	case "ocr":

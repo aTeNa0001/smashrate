@@ -111,12 +111,15 @@ var builtinRanks = []core.Template{
 	{Kind: KindRank, Label: "2", Hash: 0x3e7fe70e3c70fffe},
 	{Kind: KindRank, Label: "3", Hash: 0x1c7eff071e3e3f00},
 	{Kind: KindRank, Label: "3", Hash: 0x3e7fe7073e3f0700},
+	{Kind: KindRank, Label: "3", Hash: 0x1e7fe7071e3e0f00},
 	{Kind: KindRank, Label: "4", Hash: 0x0e1e3e6e4efffe0e},
 	{Kind: KindRank, Label: "4", Hash: 0x0e1e3e2e6efffe06},
 	{Kind: KindRank, Label: "4", Hash: 0x0e1e3e6eeeffee0e},
 	{Kind: KindRank, Label: "5", Hash: 0x1e7ee0fe6707ff7c},
 	{Kind: KindRank, Label: "6", Hash: 0x1e7ee0fef7e37f3c},
+	{Kind: KindRank, Label: "6", Hash: 0x3e7ee0fef7e3ff7e},
 	{Kind: KindRank, Label: "7", Hash: 0x1fff0e1c38383870},
+	{Kind: KindRank, Label: "8", Hash: 0x1e77677e7fe3f77c},
 }
 
 // classifyRank matches a numeral signature against learned and built-in

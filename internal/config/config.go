@@ -130,7 +130,9 @@ func Default() Config {
 		Slack:  SlackConfig{Command: "/smash"},
 		Vision: VisionConfig{
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
-			Width: 640, Height: 360, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
+			// 720p: hashes do not care about resolution, but the name-tag OCR
+			// needs the ~24 px kana that 360p renders at a blurry 12 px.
+			Width: 1280, Height: 720, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
 			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 6, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
@@ -179,7 +181,7 @@ func defaultLayouts() []Layout {
 				// wide panels: caption left of the series icon and numeral,
 				// name tag on the same row as the "1P"/"CP" badge
 				s.Char = Region{X: x + w*0.03, Y: 0.045, W: w * 0.55, H: 0.11}
-				s.Name = Region{X: x + w*0.20, Y: 0.155, W: w * 0.47, H: 0.07}
+				s.Name = Region{X: x + w*0.14, Y: 0.165, W: w * 0.53, H: 0.075}
 				s.Rank = Region{X: x + w*0.68, Y: 0.02, W: w * 0.32, H: 0.16}
 			} else {
 				// narrow panels: caption spans the panel (the icon sits behind
