@@ -116,4 +116,7 @@ func TestBalanceFixDeleteHelp(t *testing.T) {
 	if out, _ = b.Handle("learn x y", "U1"); !strings.Contains(out, "無効") {
 		t.Fatalf("learn without vision: %q", out)
 	}
+	if out, _ = b.Handle("status", "U1"); !strings.Contains(out, "プレイヤー") || !strings.Contains(out, "/status") {
+		t.Fatalf("status: %q", out)
+	}
 }

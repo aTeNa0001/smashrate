@@ -155,19 +155,45 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
+// openLog appends log output to data/smashrate.log, rotating it once at
+// startup when it has grown past 10 MB (the previous file is kept as .1).
+func openLog(dataDir string) (*os.File, error) {
+	path := filepath.Join(dataDir, "smashrate.log")
+	if st, err := os.Stat(path); err == nil && st.Size() > 10<<20 {
+		_ = os.Remove(path + ".1")
+		_ = os.Rename(path, path+".1")
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+}
+
 func serve(cfg config.Config, c *core.Core) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if f, err := openLog(cfg.Server.DataDir); err == nil {
+		defer f.Close()
+		log.SetOutput(io.MultiWriter(os.Stderr, f))
+		log.SetFlags(log.Ldate | log.Ltime)
+	} else {
+		log.Printf("log file: %v (logging to stderr only)", err)
+	}
+	log.Printf("smashrate %s starting", version)
+
 	var watcher *vision.Watcher
 	var bot *slackbot.Bot
-	opts := httpapi.Options{Auth: cfg.Server.Auth}
+	opts := httpapi.Options{Auth: cfg.Server.Auth, Version: version}
 	if cfg.Vision.Enabled {
 		opts.Frame = func() image.Image {
 			if watcher == nil {
 				return nil
 			}
 			return watcher.LastFrame()
+		}
+		opts.Status = func() any {
+			if watcher == nil {
+				return vision.Status{}
+			}
+			return watcher.Status()
 		}
 	}
 	srv, err := httpapi.New(c, opts)

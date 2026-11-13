@@ -197,6 +197,13 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 	if err := w.Learn(pend[0], "Jiro"); err != nil {
 		t.Fatal(err)
 	}
+	st := w.Status()
+	if st.Frames != 3 || st.Detections != 3 || st.Templates[KindName] != 3 || st.LastMessage == "" {
+		t.Fatalf("status: %+v", st)
+	}
+	if txt := w.StatusText(); !strings.Contains(txt, "受信中") {
+		t.Fatalf("status text: %q", txt)
+	}
 	if _, err := c.PlayerByName("Jiro"); err != nil {
 		t.Fatal("learning a name tag should create the player")
 	}

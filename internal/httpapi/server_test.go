@@ -132,7 +132,7 @@ func TestAPIRecordAndPages(t *testing.T) {
 		t.Fatalf("leaderboard: %s", rec.Body)
 	}
 
-	for _, path := range []string{"/", "/players/Taro", "/matches", "/record", "/balance", "/api/players/Hanako", "/api/characters"} {
+	for _, path := range []string{"/", "/players/Taro", "/matches", "/record", "/balance", "/status", "/api/status", "/api/players/Hanako", "/api/characters"} {
 		rec = httptest.NewRecorder()
 		s.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 200 {

@@ -27,11 +27,13 @@ var templateFS embed.FS
 
 // Server is the HTTP layer.
 type Server struct {
-	core  *core.Core
-	tpl   *template.Template
-	mux   *http.ServeMux
-	auth  *auth
-	frame func() image.Image
+	core    *core.Core
+	tpl     *template.Template
+	mux     *http.ServeMux
+	auth    *auth
+	frame   func() image.Image
+	status  func() any
+	version string
 }
 
 // Options configures the server.
@@ -41,6 +43,10 @@ type Options struct {
 	// served at /api/vision/snapshot so screenshots can be taken without
 	// re-opening the capture device.
 	Frame func() image.Image
+	// Status returns the watcher's counters for /status (nil when no watcher).
+	Status func() any
+	// Version is shown on the status page.
+	Version string
 }
 
 // New builds the handler.
@@ -98,9 +104,33 @@ func New(c *core.Core, opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), frame: opt.Frame}
+	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), frame: opt.Frame, status: opt.Status, version: opt.Version}
 	s.routes()
 	return s, nil
+}
+
+func (s *Server) statusPage(w http.ResponseWriter, r *http.Request) {
+	var st any
+	if s.status != nil {
+		st = s.status()
+	}
+	players, _ := s.core.Players()
+	ms, _ := s.core.Matches(1, 0)
+	var last *core.Match
+	if len(ms) > 0 {
+		last = &ms[0]
+	}
+	s.render(w, r, "status", map[string]any{"Status": st, "HasWatcher": s.frame != nil, "Players": len(players), "LastMatch": last, "Version": s.version})
+}
+
+func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"version": s.version, "vision": nil}
+	if s.status != nil {
+		out["vision"] = s.status()
+	}
+	players, _ := s.core.Players()
+	out["players"] = len(players)
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) apiSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +192,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/balance", s.apiBalance)
 	s.mux.HandleFunc("GET /api/characters", s.apiCharacters)
 	s.mux.HandleFunc("GET /api/vision/snapshot", s.apiSnapshot)
+	s.mux.HandleFunc("GET /status", s.statusPage)
+	s.mux.HandleFunc("GET /api/status", s.apiStatus)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 }
 
@@ -222,6 +254,13 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	recent, _ := s.core.Matches(10, 0)
 	usage, _ := s.core.CharacterUsage()
+	// first-run guidance: capture enabled but the results screen not taught yet
+	needTeach := false
+	if s.status != nil {
+		if st, ok := s.status().(interface{ ScreenTemplates() int }); ok && st.ScreenTemplates() == 0 {
+			needTeach = true
+		}
+	}
 	label := scope
 	opts := s.scopeOptions()
 	for _, o := range opts {
@@ -229,7 +268,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			label = o.Label
 		}
 	}
-	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage, "Scope": scope, "ScopeLabel": label, "Scopes": opts})
+	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage, "Scope": scope, "ScopeLabel": label, "Scopes": opts, "NeedTeach": needTeach})
 }
 
 func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {

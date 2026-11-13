@@ -40,6 +40,7 @@ type Watcher struct {
 	mu        sync.Mutex
 	pending   map[string]pendingCrop
 	lastFrame image.Image
+	stats     Status
 	lastKey   string
 	stable    int
 	lastSeen  string
@@ -159,6 +160,73 @@ func (w *Watcher) LastFrame() image.Image {
 	return w.lastFrame
 }
 
+// Status is a snapshot of what the watcher has been doing, for /status.
+type Status struct {
+	Frames          int64          `json:"frames"`
+	LastFrameAt     time.Time      `json:"last_frame_at"`
+	Detections      int64          `json:"detections"`
+	LastDetectionAt time.Time      `json:"last_detection_at"`
+	LastMessage     string         `json:"last_message"`
+	LastMessageAt   time.Time      `json:"last_message_at"`
+	Pending         []string       `json:"pending"`
+	Templates       map[string]int `json:"templates"`
+	OCR             string         `json:"ocr"`
+}
+
+// ScreenTemplates is how many results-screen templates are known (0 = the
+// watcher cannot recognise anything yet).
+func (s Status) ScreenTemplates() int { return s.Templates[KindScreen] }
+
+// Status returns the current counters and the learned-template counts.
+func (w *Watcher) Status() Status {
+	w.mu.Lock()
+	s := w.stats
+	w.mu.Unlock()
+	s.Pending = w.Pending()
+	s.Templates = map[string]int{}
+	for _, k := range []string{KindScreen, KindChar, KindRank, KindName} {
+		s.Templates[k] = w.det.TemplateCount(k)
+	}
+	s.OCR = "none"
+	if w.ocr != nil {
+		s.OCR = w.ocr.Name()
+	}
+	return s
+}
+
+// StatusText is the one-paragraph form used by Slack `status`.
+func (w *Watcher) StatusText() string {
+	s := w.Status()
+	var sb strings.Builder
+	if s.LastFrameAt.IsZero() {
+		sb.WriteString("キャプチャ: 映像がまだ来ていない（Switch の電源とキャプチャボードの USB を確認）")
+	} else {
+		fmt.Fprintf(&sb, "キャプチャ: 受信中（最後のフレーム %s、%d 枚）", s.LastFrameAt.Local().Format("15:04:05"), s.Frames)
+	}
+	if s.Templates[KindScreen] == 0 {
+		sb.WriteString("\nリザルト画面: 未学習（vision teach が必要）")
+	} else if s.LastDetectionAt.IsZero() {
+		fmt.Fprintf(&sb, "\nリザルト画面: 学習済み %d 種、まだ検出なし", s.Templates[KindScreen])
+	} else {
+		fmt.Fprintf(&sb, "\nリザルト画面: 最後の検出 %s（累計 %d 回）", s.LastDetectionAt.Local().Format("01/02 15:04"), s.Detections)
+	}
+	fmt.Fprintf(&sb, "\n学習済み: キャラ %d、名前 %d、OCR %s", s.Templates[KindChar], s.Templates[KindName], s.OCR)
+	if len(s.Pending) > 0 {
+		fmt.Fprintf(&sb, "\nラベル待ち: %s", strings.Join(s.Pending, ", "))
+	}
+	if s.LastMessage != "" {
+		fmt.Fprintf(&sb, "\n最後の通知 (%s): %s", s.LastMessageAt.Local().Format("15:04"), s.LastMessage)
+	}
+	return sb.String()
+}
+
+func (w *Watcher) note(msg string) {
+	w.mu.Lock()
+	w.stats.LastMessage, w.stats.LastMessageAt = msg, time.Now()
+	w.mu.Unlock()
+	w.notify(msg)
+}
+
 // Run consumes frames until ctx ends or the source is exhausted.
 func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
 	if w.det.TemplateCount(KindScreen) == 0 {
@@ -185,12 +253,18 @@ func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
 func (w *Watcher) Process(img image.Image) {
 	w.mu.Lock()
 	w.lastFrame = img
+	w.stats.Frames++
+	w.stats.LastFrameAt = time.Now()
 	w.mu.Unlock()
 	reading, ok := w.det.Detect(img)
 	if !ok {
 		w.lastKey, w.stable = "", 0
 		return
 	}
+	w.mu.Lock()
+	w.stats.Detections++
+	w.stats.LastDetectionAt = time.Now()
+	w.mu.Unlock()
 	key := reading.Key()
 	if key == w.lastKey {
 		w.stable++
@@ -289,14 +363,14 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		}
 	}
 	if tied && len(seenRank) == 1 {
-		w.notify("全員が同順位のため記録しません（チーム分けが判定できません）。")
+		w.note("全員が同順位のため記録しません（チーム分けが判定できません）。")
 		return
 	}
 
 	var msg []string
 	if len(placeholders) > 0 {
 		// CPU fighters or humans without a name tag: never rate such a match.
-		w.notify(fmt.Sprintf("列 %v が CPU か名前タグ未設定のため、この試合は記録しません。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders))
+		w.note(fmt.Sprintf("列 %v が CPU か名前タグ未設定のため、この試合は記録しません。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders))
 		return
 	}
 	if len(newcomers) > 0 {
@@ -324,7 +398,7 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	} else if len(unidentified) == 0 {
 		msg = append(msg, "順位が読めなかったため記録していません。手動で `record` してください。")
 	}
-	w.notify(strings.Join(msg, "\n"))
+	w.note(strings.Join(msg, "\n"))
 }
 
 func describe(m core.Match) string {

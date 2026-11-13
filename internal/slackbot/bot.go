@@ -25,6 +25,11 @@ type Learner interface {
 	Pending() []string
 }
 
+// Statuser is implemented by the vision watcher to answer `status`.
+type Statuser interface {
+	StatusText() string
+}
+
 // Bot is the Slack adapter.
 type Bot struct {
 	cfg     config.SlackConfig
@@ -111,6 +116,8 @@ func (b *Bot) Handle(text, userID string) (string, bool) {
 		return b.del(rest), true
 	case "learn":
 		return b.learn(rest), false
+	case "status":
+		return b.status(), false
 	case "rename":
 		return b.rename(rest), true
 	case "merge":
@@ -135,6 +142,7 @@ func help(cmd string) string {
 		"`" + cmd + " fix <試合ID> <名前> <キャラ>` キャラの誤認識を修正",
 		"`" + cmd + " delete <試合ID>` 対戦を削除して再計算",
 		"`" + cmd + " learn <画像ID> <キャラ|1st..4th|プレイヤー名>` 未知の画像（キャラ・順位・名前タグ）にラベルを付けて学習",
+		"`" + cmd + " status` キャプチャ監視の状態（映像が来ているか、最後の検出、ラベル待ち）",
 		"`" + cmd + " rename <今の名前> <正しい名前>` OCR の読み間違いを直す",
 		"`" + cmd + " merge <重複した名前> <本来の名前>` 二重登録を統合して再計算",
 	}, "\n")
@@ -423,6 +431,24 @@ func (b *Bot) learn(arg string) string {
 		return "学習できません: " + err.Error()
 	}
 	return "学習しました: " + f[0] + " → " + strings.Join(f[1:], " ")
+}
+
+func (b *Bot) status() string {
+	players, _ := b.core.Players()
+	ms, _ := b.core.Matches(1, 0)
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "プレイヤー %d 人", len(players))
+	if len(ms) > 0 {
+		fmt.Fprintf(&sb, "、最後の試合 #%d %s", ms[0].ID, ms[0].PlayedAt.Local().Format("01/02 15:04"))
+	}
+	sb.WriteString("\n")
+	if st, ok := b.learner.(Statuser); ok && st != nil {
+		sb.WriteString(st.StatusText())
+	} else {
+		sb.WriteString("キャプチャ監視: 無効")
+	}
+	fmt.Fprintf(&sb, "\n%s/status", b.baseURL)
+	return sb.String()
 }
 
 func (b *Bot) rename(arg string) string {

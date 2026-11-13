@@ -1,0 +1,31 @@
+{{template "header" .}}
+<h1>状態 <span class="muted" style="font-size:13px;font-weight:400">smashrate {{.Version}}</span></h1>
+<div>
+  <div class="tile"><b>{{.Players}}</b><span>登録プレイヤー</span></div>
+  {{with .LastMatch}}<div class="tile"><b>{{date .PlayedAt}}</b><span>最後の試合 #{{.ID}}（{{.Source}}）</span></div>{{else}}<div class="tile"><b>—</b><span>試合はまだ無い</span></div>{{end}}
+</div>
+
+{{if not .HasWatcher}}
+<h2>キャプチャ</h2>
+<p class="muted">キャプチャ監視は無効です（smashrate.toml の <code>[vision] enabled = true</code> で有効化）。</p>
+{{else}}{{$s := .Status}}
+<h2>キャプチャが今見ている映像</h2>
+<p class="muted">約 2 秒ごとに更新。これがリザルト画面のときに自動記録が走ります。</p>
+<img id="live" src="/api/vision/snapshot" alt="キャプチャの最新フレーム" style="max-width:100%;border:1px solid var(--line);background:#000">
+<script>setInterval(function(){ var i=document.getElementById('live'); i.src='/api/vision/snapshot?t='+Date.now(); }, 2000);</script>
+
+<h2>監視の状態</h2>
+<div class="wrap"><table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>受信フレーム数</td><td class="n">{{$s.Frames}}</td></tr>
+<tr><td>最後のフレーム</td><td>{{if $s.LastFrameAt.IsZero}}<span class="down">まだ映像が来ていない</span>{{else}}{{date $s.LastFrameAt}}{{end}}</td></tr>
+<tr><td>リザルト画面を検出した回数</td><td class="n">{{$s.Detections}}</td></tr>
+<tr><td>最後の検出</td><td>{{if $s.LastDetectionAt.IsZero}}—{{else}}{{date $s.LastDetectionAt}}{{end}}</td></tr>
+<tr><td>最後の通知</td><td>{{if $s.LastMessage}}{{date $s.LastMessageAt}}<br><span class="muted" style="white-space:pre-wrap">{{$s.LastMessage}}</span>{{else}}—{{end}}</td></tr>
+<tr><td>名前タグ OCR</td><td>{{$s.OCR}}</td></tr>
+<tr><td>学習済みテンプレート</td><td>画面 {{index $s.Templates "screen"}} · キャラ {{index $s.Templates "char"}} · 順位 {{index $s.Templates "rank"}}（1〜8 は組み込み）· 名前 {{index $s.Templates "name"}}</td></tr>
+<tr><td>ラベル待ちの画像</td><td>{{if $s.Pending}}{{range $s.Pending}}<code>{{.}}</code> {{end}}<br><span class="muted">Slack で <code>/smash learn &lt;ID&gt; &lt;ラベル&gt;</code></span>{{else}}なし{{end}}</td></tr>
+</table></div>
+{{if eq (index $s.Templates "screen") 0}}<div class="err">リザルト画面をまだ教えていません。リザルト画面が出ているときに <code>vision snapshot</code> → <code>vision teach -players N</code> を 1 回実行してください。</div>{{end}}
+{{end}}
+{{template "footer" .}}

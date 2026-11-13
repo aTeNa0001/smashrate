@@ -4,6 +4,8 @@
   <label>表示するレート <select id="scope" name="scope" onchange="this.form.submit()">{{$cur := .Scope}}{{range .Scopes}}<option value="{{.Scope}}" {{if eq .Scope $cur}}selected{{end}}>{{.Label}}</option>{{end}}</select></label>
   <noscript><button type="submit">表示</button></noscript>
 </form>
+{{if .NeedTeach}}<div class="err"><b>自動記録の準備があと 1 手です。</b> キャプチャは動いていますが、リザルト画面をまだ教えていません。ミニPCで、リザルト画面が出ているときに次を実行してください（人数ごとに 1 回）。<pre style="margin:6px 0 0;white-space:pre-wrap">./smashrate.exe vision snapshot -out C:/smashrate/shot_4p.png
+./smashrate.exe vision teach -image C:/smashrate/shot_4p.png -players 4</pre><span class="muted">いまキャプチャが見ている映像は <a href="/status">状態ページ</a> で確認できます。</span></div>{{end}}
 {{if not .Leaderboard}}<p class="muted">このレートにはまだ対戦が記録されていません。<a href="/record">手動記録</a>から始めるか、キャプチャ監視を有効にしてください。</p>{{end}}
 <div class="wrap"><table>
 <tr><th class="n">#</th><th>プレイヤー</th><th class="n">レート</th><th class="n">試合</th><th class="n">勝</th><th class="n">勝率</th><th class="n">μ</th><th class="n">σ</th></tr>
