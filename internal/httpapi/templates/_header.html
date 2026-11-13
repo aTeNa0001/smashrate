@@ -51,6 +51,8 @@ canvas { width:100%; height:auto; background:var(--surface); border:1px solid va
   <a href="/matches" {{if eq .Page "matches"}}class="on"{{end}}>対戦履歴</a>
   <a href="/record" {{if eq .Page "record"}}class="on"{{end}}>手動記録</a>
   <a href="/balance" {{if eq .Page "balance"}}class="on"{{end}}>チーム分け</a>
+  <a href="/learn" {{if eq .Page "learn"}}class="on"{{end}}>学習</a>
+  <a href="/players" {{if eq .Page "players"}}class="on"{{end}}>プレイヤー</a>
   <a href="/status" {{if eq .Page "status"}}class="on"{{end}}>状態</a>
   {{if .AuthEnabled}}<span style="margin-left:auto">{{if .LoggedIn}}<form method="post" action="/logout" style="display:inline"><button class="ghost" type="submit">ログアウト</button></form>{{else}}<a href="/login">ログイン</a>{{end}}</span>{{end}}
 </nav>

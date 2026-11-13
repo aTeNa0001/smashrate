@@ -183,18 +183,19 @@ func serve(cfg config.Config, c *core.Core) error {
 	var bot *slackbot.Bot
 	opts := httpapi.Options{Auth: cfg.Server.Auth, Version: version}
 	if cfg.Vision.Enabled {
-		opts.Frame = func() image.Image {
-			if watcher == nil {
-				return nil
+		// the watcher is created below; the web UI only ever sees it through
+		// this value, so build it first
+		w, err := vision.NewWatcher(cfg.Vision, c, cfg.Server.DataDir, func(s string) {
+			log.Println("vision:", s)
+			if bot != nil {
+				bot.Notify(s)
 			}
-			return watcher.LastFrame()
+		})
+		if err != nil {
+			return err
 		}
-		opts.Status = func() any {
-			if watcher == nil {
-				return vision.Status{}
-			}
-			return watcher.Status()
-		}
+		watcher = w
+		opts.Vision = w
 	}
 	srv, err := httpapi.New(c, opts)
 	if err != nil {
@@ -209,17 +210,6 @@ func serve(cfg config.Config, c *core.Core) error {
 	if cfg.Slack.Enabled {
 		if cfg.Slack.BotToken == "" || cfg.Slack.AppToken == "" {
 			return errors.New("slack.enabled but bot_token/app_token missing")
-		}
-	}
-	if cfg.Vision.Enabled {
-		watcher, err = vision.NewWatcher(cfg.Vision, c, cfg.Server.DataDir, func(s string) {
-			log.Println("vision:", s)
-			if bot != nil {
-				bot.Notify(s)
-			}
-		})
-		if err != nil {
-			return err
 		}
 	}
 	if cfg.Slack.Enabled {

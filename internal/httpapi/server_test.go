@@ -132,7 +132,7 @@ func TestAPIRecordAndPages(t *testing.T) {
 		t.Fatalf("leaderboard: %s", rec.Body)
 	}
 
-	for _, path := range []string{"/", "/players/Taro", "/matches", "/record", "/balance", "/status", "/api/status", "/api/players/Hanako", "/api/characters"} {
+	for _, path := range []string{"/", "/players/Taro", "/matches", "/record", "/balance", "/status", "/api/status", "/learn", "/players", "/api/players/Hanako", "/api/characters"} {
 		rec = httptest.NewRecorder()
 		s.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 200 {
@@ -211,6 +211,35 @@ func TestEditAndScopes(t *testing.T) {
 	s.ServeHTTP(rec, httptest.NewRequest("GET", "/?scope=mode:ffa", nil))
 	if strings.Contains(rec.Body.String(), `<td class="n"><b>`) {
 		t.Fatal("ffa ranking should be empty")
+	}
+}
+
+func TestPlayersAdminAndLearnPages(t *testing.T) {
+	s, c := newTestServer(t)
+	_, _ = c.RecordMatch(core.MatchInput{Entries: []core.EntryInput{{Player: "Hanak0", Team: 1, Rank: 1}, {Player: "B", Team: 2, Rank: 2}}})
+	_, _ = c.RecordMatch(core.MatchInput{Entries: []core.EntryInput{{Player: "Hanako", Team: 1, Rank: 1}, {Player: "B", Team: 2, Rank: 2}}})
+	post := func(path, form string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", path, strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := post("/players", "action=rename&from=Hanak0&to=Hana"); !strings.Contains(rec.Header().Get("Location"), "done=") {
+		t.Fatalf("rename: %s", rec.Header().Get("Location"))
+	}
+	if rec := post("/players", "action=merge&from=Hana&to=Hanako"); !strings.Contains(rec.Header().Get("Location"), "done=") {
+		t.Fatalf("merge: %s", rec.Header().Get("Location"))
+	}
+	if _, err := c.PlayerByName("Hana"); err == nil {
+		t.Fatal("merged player should be gone")
+	}
+	if rec := post("/players", "action=merge&from=nobody&to=Hanako"); !strings.Contains(rec.Header().Get("Location"), "error=") {
+		t.Fatalf("merge error: %s", rec.Header().Get("Location"))
+	}
+	// no capture: learn page renders empty, submit is refused
+	if rec := post("/learn", "id=x&label=y&action=learn"); rec.Code != 400 {
+		t.Fatalf("learn without capture: %d", rec.Code)
 	}
 }
 

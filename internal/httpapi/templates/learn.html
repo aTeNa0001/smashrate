@@ -1,0 +1,25 @@
+{{template "header" .}}
+<h1>学習（ラベル待ちの画像）</h1>
+<p class="muted">自動で読めなかった切り抜きです。正しいラベルを付けると、その場で覚えて以後は自動で認識します。名前タグなら本人の名前、キャラならキャラ名、順位なら数字（1〜8）。CPU や名前未設定のタグ、関係ない画像は「破棄」。</p>
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+{{if .Done}}<p class="up">{{.Done}}</p>{{end}}
+{{if not .Pending}}<p class="muted">ラベル待ちの画像はありません。</p>{{end}}
+<datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
+<datalist id="chars">{{range .Characters}}<option value="{{.NameJA}}">{{.NameEN}}</option>{{end}}</datalist>
+{{range .Pending}}
+<div class="team" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:10px;min-width:0">
+  <img src="/api/vision/pending/{{.ID}}.png" alt="{{.Kind}} {{.ID}}" style="height:64px;max-width:320px;image-rendering:pixelated;background:#000;border:1px solid var(--line)">
+  <div style="min-width:0">
+    <b>{{if eq .Kind "name"}}名前タグ{{else if eq .Kind "char"}}キャラ{{else}}順位{{end}}</b> <span class="muted">{{.ID}} · {{date .Seen}}</span>
+    <form method="post" action="/learn" class="row" style="margin-top:6px">
+      <input type="hidden" name="id" value="{{.ID}}">
+      {{if eq .Kind "name"}}<input name="label" list="players" placeholder="プレイヤー名" autocomplete="off">
+      {{else if eq .Kind "char"}}<input name="label" list="chars" placeholder="キャラ名" autocomplete="off">
+      {{else}}<input name="label" type="number" min="1" max="8" placeholder="順位" style="width:6em">{{end}}
+      <button type="submit" name="action" value="learn">覚える</button>
+      <button type="submit" name="action" value="discard" class="ghost">破棄</button>
+    </form>
+  </div>
+</div>
+{{end}}
+{{template "footer" .}}

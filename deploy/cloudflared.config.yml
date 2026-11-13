@@ -7,4 +7,9 @@ credentials-file: C:\Users\<you>\.cloudflared\<TUNNEL-ID>.json
 ingress:
   - hostname: smash.example.com
     service: http://localhost:8080
+  # remote maintenance (protect both with Cloudflare Access policies)
+  - hostname: ssh.smash.example.com
+    service: ssh://localhost:22
+  - hostname: rdp.smash.example.com
+    service: rdp://localhost:3389
   - service: http_status:404

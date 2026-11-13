@@ -91,6 +91,10 @@ func (s *Server) requireLogin(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path == "/balance" || r.URL.Path == "/api/balance" {
 		write = false
 	}
+	// Learning and player administration are always protected, even for reads.
+	if r.URL.Path == "/learn" || r.URL.Path == "/players" {
+		write = true
+	}
 	if !write && !s.auth.cfg.ReadRequiresLogin {
 		return false
 	}

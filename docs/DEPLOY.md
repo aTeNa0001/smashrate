@@ -88,6 +88,47 @@ powershell -ExecutionPolicy Bypass -File deploy\install-task.ps1    # ログオ�
 schtasks /Create /TN smashrate-backup /SC DAILY /ST 04:00 /TR "powershell -ExecutionPolicy Bypass -File C:\path\to\deploy\backup.ps1"
 ```
 
+## 4b. リモート保守（オフィスのミニPCに外から入る）
+
+同じトンネルに SSH と RDP を相乗りさせる。社内ネットワークには何も開けず、Access のサインインを
+通った人だけが入れる。追加費用なし。
+
+**SSH（PowerShell が開く。更新・doctor・ログ確認はこれで足りる）**
+
+```powershell
+# ミニPC（管理者 PowerShell、1 回だけ）
+powershell -ExecutionPolicy Bypass -File C:\smashrate\src\deploy\enable-ssh.ps1
+# cloudflared の config.yml に ssh.smash.example.com → ssh://localhost:22 を追加（deploy/cloudflared.config.yml 参照）
+cloudflared tunnel route dns smashrate ssh.smash.example.com
+Restart-Service cloudflared
+```
+
+Cloudflare ダッシュボードで Access アプリケーションを `ssh.smash.example.com` にも作る（自分のメールだけ許可）。
+手元の PC では cloudflared を入れて `~/.ssh/config` に:
+
+```
+Host smash-pc
+  HostName ssh.smash.example.com
+  User <ミニPCのユーザー名>
+  ProxyCommand cloudflared access ssh --hostname %h
+```
+
+`ssh smash-pc` でブラウザのサインインが開き、通ると PowerShell が出る。よく使う操作:
+
+```powershell
+cd C:\smashrate; .\smashrate.exe doctor
+Get-Content data\smashrate.log -Tail 50
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/aTeNa0001/smashrate/main/deploy/setup.ps1))) -FromSource
+schtasks /End /TN smashrate; schtasks /Run /TN smashrate
+```
+
+**RDP（画面が要るとき。Windows Pro のみ）**
+
+ミニPCで「設定 → システム → リモート デスクトップ → オン」にし、config.yml に
+`rdp.smash.example.com → rdp://localhost:3389` を追加して DNS ルートと Access ポリシーを作る。
+手元では `cloudflared access rdp --hostname rdp.smash.example.com --url rdp://localhost:3390` を
+起動したまま、リモートデスクトップ接続で `localhost:3390` に繋ぐ。Home の場合は Chrome リモート デスクトップで代用。
+
 ## 5. 確認
 
 1. `https://smash.example.com/healthz` が `ok` を返す（Access のサインイン後）。

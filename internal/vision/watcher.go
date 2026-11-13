@@ -41,6 +41,7 @@ type Watcher struct {
 	pending   map[string]pendingCrop
 	lastFrame image.Image
 	stats     Status
+	events    []Event // ring of recent notifications
 	lastKey   string
 	stable    int
 	lastSeen  string
@@ -223,6 +224,10 @@ func (w *Watcher) StatusText() string {
 func (w *Watcher) note(msg string) {
 	w.mu.Lock()
 	w.stats.LastMessage, w.stats.LastMessageAt = msg, time.Now()
+	w.events = append(w.events, Event{At: time.Now(), Text: msg})
+	if len(w.events) > 50 {
+		w.events = w.events[len(w.events)-50:]
+	}
 	w.mu.Unlock()
 	w.notify(msg)
 }
@@ -455,6 +460,61 @@ func (w *Watcher) Pending() []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// PendingCrop describes one crop waiting for a label (for the web UI).
+type PendingCrop struct {
+	ID   string    `json:"id"`
+	Kind string    `json:"kind"` // char | rank | name
+	Seen time.Time `json:"seen"`
+}
+
+// PendingCrops lists the crops waiting for a label, oldest first.
+func (w *Watcher) PendingCrops() []PendingCrop {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]PendingCrop, 0, len(w.pending))
+	for id, p := range w.pending {
+		out = append(out, PendingCrop{ID: id, Kind: p.Kind, Seen: p.Seen})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Seen.Before(out[j].Seen) })
+	return out
+}
+
+// CropPath returns the PNG file of a pending crop.
+func (w *Watcher) CropPath(id string) (string, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.pending[id]
+	return p.Path, ok
+}
+
+// Discard drops a pending crop without learning anything.
+func (w *Watcher) Discard(id string) {
+	w.mu.Lock()
+	p, ok := w.pending[id]
+	delete(w.pending, id)
+	w.mu.Unlock()
+	if ok {
+		_ = os.Remove(p.Path)
+	}
+}
+
+// Event is one notification the watcher produced.
+type Event struct {
+	At   time.Time `json:"at"`
+	Text string    `json:"text"`
+}
+
+// Events returns the most recent notifications, newest first.
+func (w *Watcher) Events() []Event {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]Event, len(w.events))
+	for i, e := range w.events {
+		out[len(w.events)-1-i] = e
+	}
+	return out
 }
 
 // Learn labels a pending crop, stores it as a template and reloads.

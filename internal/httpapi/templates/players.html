@@ -1,0 +1,26 @@
+{{template "header" .}}
+<h1>プレイヤー管理</h1>
+<p class="muted">名前タグの読み間違いで変な名前が登録されたら「名前を変更」。同じ人が二重に登録されたら「統合」（成績を引き継いで全員のレートを再計算）。</p>
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+{{if .Done}}<p class="up">{{.Done}}</p>{{end}}
+<datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
+<h2>名前を変更</h2>
+<form method="post" action="/players" class="row">
+  <input type="hidden" name="action" value="rename">
+  <label>今の名前 <input name="from" list="players" autocomplete="off"></label>
+  <label>正しい名前 <input name="to" autocomplete="off"></label>
+  <button type="submit">変更</button>
+</form>
+<h2>統合</h2>
+<form method="post" action="/players" class="row" onsubmit="return confirm('統合すると元に戻せません。よろしいですか？')">
+  <input type="hidden" name="action" value="merge">
+  <label>重複した名前（消える側） <input name="from" list="players" autocomplete="off"></label>
+  <label>本来の名前（残す側） <input name="to" list="players" autocomplete="off"></label>
+  <button type="submit">統合して再計算</button>
+</form>
+<h2>一覧</h2>
+<div class="wrap"><table>
+<tr><th>名前</th><th class="n">試合数</th><th>登録</th></tr>
+{{$g := .Games}}{{range .Players}}<tr><td><a href="/players/{{.Name}}">{{.Name}}</a></td><td class="n">{{index $g .ID}}</td><td class="muted">{{date .CreatedAt}}</td></tr>{{end}}
+</table></div>
+{{template "footer" .}}

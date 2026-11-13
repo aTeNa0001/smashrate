@@ -20,6 +20,7 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
 	"github.com/aTeNa0001/smashrate/internal/rating"
+	"github.com/aTeNa0001/smashrate/internal/vision"
 )
 
 //go:embed templates/*.html
@@ -31,22 +32,28 @@ type Server struct {
 	tpl     *template.Template
 	mux     *http.ServeMux
 	auth    *auth
-	frame   func() image.Image
-	status  func() any
+	vision  Vision
 	version string
 }
 
 // Options configures the server.
 type Options struct {
 	Auth config.AuthConfig
-	// Frame returns the capture watcher's latest frame (nil when none);
-	// served at /api/vision/snapshot so screenshots can be taken without
-	// re-opening the capture device.
-	Frame func() image.Image
-	// Status returns the watcher's counters for /status (nil when no watcher).
-	Status func() any
+	// Vision is the capture watcher (nil when capture is disabled).
+	Vision Vision
 	// Version is shown on the status page.
 	Version string
+}
+
+// Vision is what the web UI needs from the capture watcher.
+type Vision interface {
+	LastFrame() image.Image
+	Status() vision.Status
+	Events() []vision.Event
+	PendingCrops() []vision.PendingCrop
+	CropPath(id string) (string, bool)
+	Learn(id, label string) error
+	Discard(id string)
 }
 
 // New builds the handler.
@@ -104,41 +111,130 @@ func New(c *core.Core, opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), frame: opt.Frame, status: opt.Status, version: opt.Version}
+	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), vision: opt.Vision, version: opt.Version}
 	s.routes()
 	return s, nil
 }
 
 func (s *Server) statusPage(w http.ResponseWriter, r *http.Request) {
-	var st any
-	if s.status != nil {
-		st = s.status()
-	}
 	players, _ := s.core.Players()
 	ms, _ := s.core.Matches(1, 0)
 	var last *core.Match
 	if len(ms) > 0 {
 		last = &ms[0]
 	}
-	s.render(w, r, "status", map[string]any{"Status": st, "HasWatcher": s.frame != nil, "Players": len(players), "LastMatch": last, "Version": s.version})
+	data := map[string]any{"HasWatcher": s.vision != nil, "Players": len(players), "LastMatch": last, "Version": s.version}
+	if s.vision != nil {
+		data["Status"] = s.vision.Status()
+		data["Events"] = s.vision.Events()
+		data["Pending"] = s.vision.PendingCrops()
+	}
+	s.render(w, r, "status", data)
 }
 
 func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"version": s.version, "vision": nil}
-	if s.status != nil {
-		out["vision"] = s.status()
+	if s.vision != nil {
+		out["vision"] = s.vision.Status()
+		out["events"] = s.vision.Events()
+		out["pending"] = s.vision.PendingCrops()
 	}
 	players, _ := s.core.Players()
 	out["players"] = len(players)
 	writeJSON(w, 200, out)
 }
 
+// ---------- learning unknown crops from the web ----------
+
+func (s *Server) learnPage(w http.ResponseWriter, r *http.Request) {
+	data := map[string]any{"Characters": characters.All, "Error": r.URL.Query().Get("error"), "Done": r.URL.Query().Get("done")}
+	if s.vision != nil {
+		data["Pending"] = s.vision.PendingCrops()
+	}
+	players, _ := s.core.Players()
+	data["Players"] = players
+	s.render(w, r, "learn", data)
+}
+
+func (s *Server) learnSubmit(w http.ResponseWriter, r *http.Request) {
+	if s.vision == nil {
+		http.Error(w, "capture is disabled", 400)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	id := r.FormValue("id")
+	if r.FormValue("action") == "discard" {
+		s.vision.Discard(id)
+		http.Redirect(w, r, "/learn?done="+url.QueryEscape(id+" を破棄"), http.StatusSeeOther)
+		return
+	}
+	label := strings.TrimSpace(r.FormValue("label"))
+	if err := s.vision.Learn(id, label); err != nil {
+		http.Redirect(w, r, "/learn?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/learn?done="+url.QueryEscape(id+" → "+label), http.StatusSeeOther)
+}
+
+func (s *Server) cropImage(w http.ResponseWriter, r *http.Request) {
+	if s.vision == nil {
+		http.NotFound(w, r)
+		return
+	}
+	path, ok := s.vision.CropPath(strings.TrimSuffix(r.PathValue("id"), ".png"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
+}
+
+// ---------- player administration ----------
+
+func (s *Server) playersPage(w http.ResponseWriter, r *http.Request) {
+	players, _ := s.core.Players()
+	lb, _ := s.core.Leaderboard(core.ScopeOverall)
+	games := map[int64]int{}
+	for _, row := range lb {
+		games[row.Player.ID] = row.Games
+	}
+	s.render(w, r, "players", map[string]any{"Players": players, "Games": games, "Error": r.URL.Query().Get("error"), "Done": r.URL.Query().Get("done")})
+}
+
+func (s *Server) playersSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	var err error
+	var done string
+	switch r.FormValue("action") {
+	case "rename":
+		err = s.core.RenamePlayer(r.FormValue("from"), r.FormValue("to"))
+		done = r.FormValue("from") + " → " + r.FormValue("to") + " に変更"
+	case "merge":
+		err = s.core.MergePlayers(r.FormValue("from"), r.FormValue("to"))
+		done = r.FormValue("from") + " を " + r.FormValue("to") + " に統合して再計算"
+	default:
+		err = fmt.Errorf("unknown action")
+	}
+	if err != nil {
+		http.Redirect(w, r, "/players?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/players?done="+url.QueryEscape(done), http.StatusSeeOther)
+}
+
 func (s *Server) apiSnapshot(w http.ResponseWriter, r *http.Request) {
-	if s.frame == nil {
+	if s.vision == nil {
 		writeErr(w, 404, fmt.Errorf("capture watcher is not running (vision.enabled = false)"))
 		return
 	}
-	img := s.frame()
+	img := s.vision.LastFrame()
 	if img == nil {
 		writeErr(w, 503, fmt.Errorf("no frame received yet"))
 		return
@@ -194,6 +290,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/vision/snapshot", s.apiSnapshot)
 	s.mux.HandleFunc("GET /status", s.statusPage)
 	s.mux.HandleFunc("GET /api/status", s.apiStatus)
+	s.mux.HandleFunc("GET /learn", s.learnPage)
+	s.mux.HandleFunc("POST /learn", s.learnSubmit)
+	s.mux.HandleFunc("GET /api/vision/pending/{id}", s.cropImage)
+	s.mux.HandleFunc("GET /players", s.playersPage)
+	s.mux.HandleFunc("POST /players", s.playersSubmit)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 }
 
@@ -254,12 +355,11 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	recent, _ := s.core.Matches(10, 0)
 	usage, _ := s.core.CharacterUsage()
-	// first-run guidance: capture enabled but the results screen not taught yet
-	needTeach := false
-	if s.status != nil {
-		if st, ok := s.status().(interface{ ScreenTemplates() int }); ok && st.ScreenTemplates() == 0 {
-			needTeach = true
-		}
+	// first-run guidance and pending labels
+	needTeach, pending := false, 0
+	if s.vision != nil {
+		needTeach = s.vision.Status().ScreenTemplates() == 0
+		pending = len(s.vision.PendingCrops())
 	}
 	label := scope
 	opts := s.scopeOptions()
@@ -268,7 +368,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			label = o.Label
 		}
 	}
-	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage, "Scope": scope, "ScopeLabel": label, "Scopes": opts, "NeedTeach": needTeach})
+	s.render(w, r, "index", map[string]any{"Leaderboard": lb, "Recent": recent, "Usage": usage, "Scope": scope, "ScopeLabel": label, "Scopes": opts, "NeedTeach": needTeach, "PendingCount": pending})
 }
 
 func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {

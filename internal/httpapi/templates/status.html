@@ -24,8 +24,14 @@
 <tr><td>最後の通知</td><td>{{if $s.LastMessage}}{{date $s.LastMessageAt}}<br><span class="muted" style="white-space:pre-wrap">{{$s.LastMessage}}</span>{{else}}—{{end}}</td></tr>
 <tr><td>名前タグ OCR</td><td>{{$s.OCR}}</td></tr>
 <tr><td>学習済みテンプレート</td><td>画面 {{index $s.Templates "screen"}} · キャラ {{index $s.Templates "char"}} · 順位 {{index $s.Templates "rank"}}（1〜8 は組み込み）· 名前 {{index $s.Templates "name"}}</td></tr>
-<tr><td>ラベル待ちの画像</td><td>{{if $s.Pending}}{{range $s.Pending}}<code>{{.}}</code> {{end}}<br><span class="muted">Slack で <code>/smash learn &lt;ID&gt; &lt;ラベル&gt;</code></span>{{else}}なし{{end}}</td></tr>
+<tr><td>ラベル待ちの画像</td><td>{{if $s.Pending}}{{len $s.Pending}} 件 → <a href="/learn">学習ページ</a>{{else}}なし{{end}}</td></tr>
 </table></div>
+
+<h2>通知の履歴</h2>
+{{if .Events}}<div class="wrap"><table>
+<tr><th>時刻</th><th>内容</th></tr>
+{{range .Events}}<tr><td style="white-space:nowrap">{{date .At}}</td><td style="white-space:pre-wrap">{{.Text}}</td></tr>{{end}}
+</table></div>{{else}}<p class="muted">まだ通知はありません（起動後のもののみ。過去分は data/smashrate.log）。</p>{{end}}
 {{if eq (index $s.Templates "screen") 0}}<div class="err">リザルト画面をまだ教えていません。リザルト画面が出ているときに <code>vision snapshot</code> → <code>vision teach -players N</code> を 1 回実行してください。</div>{{end}}
 {{end}}
 {{template "footer" .}}
