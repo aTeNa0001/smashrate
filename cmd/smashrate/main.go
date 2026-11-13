@@ -443,6 +443,10 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 					return err
 				}
 				fmt.Println("saved", path, "(from the running watcher)")
+				if img, err := vision.OpenFiles(path).Next(); err == nil {
+					b := img.Bounds()
+					fmt.Printf("frame size %dx%d (config: %dx%d; restart the task after changing width/height)\n", b.Dx(), b.Dy(), cfg.Vision.Width, cfg.Vision.Height)
+				}
 				return nil
 			}
 		}
@@ -563,7 +567,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if r.Team {
 			kind = "team battle"
 		}
-		fmt.Printf("results screen, %d players (%s)\n", r.Players, kind)
+		fmt.Printf("results screen, %d players (%s), image %dx%d\n", r.Players, kind, img.Bounds().Dx(), img.Bounds().Dy())
 		for _, s := range r.Slots {
 			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d, glyph %016x)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist, s.RankHash)
 		}

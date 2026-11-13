@@ -142,7 +142,7 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 			resp.Body.Close()
 			switch resp.StatusCode {
 			case 200:
-				add("OK", "フレーム取得", "常駐プロセスが映像を受信中", "")
+				add("OK", "フレーム取得", fmt.Sprintf("常駐プロセスが映像を受信中（設定 %dx%d）", cfg.Vision.Width, cfg.Vision.Height), "")
 			case 503:
 				add("FAIL", "フレーム取得", "常駐プロセスは起動しているが映像がまだ来ない", "Switch の電源とキャプチャボードの入力、USB 3.0 の挿し口を確認。タスクを再起動して再確認")
 			default:
