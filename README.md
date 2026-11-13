@@ -77,6 +77,28 @@ PowerShell で `cd C:/smashrate` してから（`\` が打てなければ `/` �
 
 設定を変えたあとは毎回 4 の 2 行（再起動と doctor）を実行する。
 
+### よく使うコマンド
+
+管理者 PowerShell で `cd C:/smashrate` してから。
+
+```powershell
+# 設定を変えたあとの再起動（smashrate.toml の変更はこれで反映）
+schtasks /End /TN smashrate; schtasks /Run /TN smashrate
+
+# 前提条件・状態のチェック
+./smashrate.exe doctor
+
+# 本体を最新にする（更新後は自動で再起動される）
+Set-ExecutionPolicy -Scope Process Bypass -Force
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/aTeNa0001/smashrate/main/deploy/setup.ps1))) -FromSource
+
+# ログの末尾
+Get-Content data/smashrate.log -Tail 50
+
+# テスト期間の試合とレートを消す（プレイヤーと学習結果は残る）
+schtasks /End /TN smashrate; ./smashrate.exe reset-matches --yes; schtasks /Run /TN smashrate
+```
+
 ### 今見ている画面を確認する
 
 リザルト画面が出ている間に、ミニPCの PowerShell（`cd C:/smashrate` 済み）で:

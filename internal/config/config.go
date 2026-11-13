@@ -145,9 +145,9 @@ func Default() Config {
 		Slack:  SlackConfig{Command: "/smash"},
 		Vision: VisionConfig{
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
-			// 720p: hashes do not care about resolution, but the name-tag OCR
-			// needs the ~24 px kana that 360p renders at a blurry 12 px.
-			Width: 1280, Height: 720, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
+			// Full 1080p: hashes do not care about resolution, but the name-tag
+			// OCR misreads kana below ~30 px (360p renders them at 12 px).
+			Width: 1920, Height: 1080, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
 			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 6, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
