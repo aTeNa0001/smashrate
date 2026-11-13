@@ -73,9 +73,29 @@ PowerShell で `cd C:/smashrate` してから（`\` が打てなければ `/` �
    ./smashrate.exe vision teach -image C:/smashrate/shot_4p.png -players 4
    ```
 
-6. 以後はリザルト画面が出るたびに自動で記録され、Slack に通知される。
+6. 以後はリザルト画面が出るたびに自動で記録され、Web の `/status` と Slack に通知される。
 
 設定を変えたあとは毎回 4 の 2 行（再起動と doctor）を実行する。
+
+### 今見ている画面を確認する
+
+リザルト画面が出ている間に、ミニPCの PowerShell（`cd C:/smashrate` 済み）で:
+
+```powershell
+./smashrate.exe vision snapshot -out C:/smashrate/now.png
+./smashrate.exe vision test -image C:/smashrate/now.png -ocr
+```
+
+1 行目が「saved ... (from the running watcher)」なら今の画面が保存されている。2 行目で各列の
+名前タグ・キャラ・順位の認識結果と、OCR が読んだ文字が表示される。
+
+「not a results screen」と出たら、その人数の画面をまだ教えていないので、同じ画像で先に:
+
+```powershell
+./smashrate.exe vision teach -image C:/smashrate/now.png -players 2
+```
+
+（`-players` は画面の人数）を実行してから、もう一度 2 行目を実行する。
 
 ## Slack
 
