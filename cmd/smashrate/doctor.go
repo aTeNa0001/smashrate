@@ -177,10 +177,12 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 			add("FAIL", "名前タグ OCR", err.Error(), "")
 		} else if eng == nil {
 			add("WARN", "名前タグ OCR", "無効（新しい名前は手動の learn が必要）", "[vision.ocr] engine = \"auto\"")
-		} else if _, err := eng.Recognize(image.NewRGBA(image.Rect(0, 0, 40, 16))); err != nil {
+		} else if txt, err := eng.Recognize(ocrProbe()); err != nil {
 			add("FAIL", "名前タグ OCR", eng.Name()+": "+err.Error(), "Windows の言語設定に日本語を追加（OCR の言語パックが入る）")
+		} else if clean := ocr.NormalizeName(txt); clean == "" {
+			add("WARN", "名前タグ OCR", eng.Name()+" は動くが試験文字が読めなかった", "vision test -ocr で実画面の読みを確認")
 		} else {
-			add("OK", "名前タグ OCR", eng.Name()+" が動作", "")
+			add("OK", "名前タグ OCR", fmt.Sprintf("%s が動作（試験文字 %q）", eng.Name(), clean), "")
 		}
 	}
 
@@ -267,6 +269,39 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// ocrProbe draws a few big block digits ("12") so the OCR check exercises
+// the whole pipeline, including the console encoding of the result.
+func ocrProbe() image.Image {
+	const scale = 6
+	glyphs := map[rune][]string{
+		'1': {"..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."},
+		'2': {".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"},
+	}
+	text := "12"
+	w, h := (len(text)*6+2)*scale, 9*scale
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := range img.Pix {
+		img.Pix[i] = 255
+	}
+	for ci, ch := range text {
+		for y, row := range glyphs[ch] {
+			for x, c := range row {
+				if c != '#' {
+					continue
+				}
+				for dy := 0; dy < scale; dy++ {
+					for dx := 0; dx < scale; dx++ {
+						px, py := (1+ci*6+x)*scale+dx, (1+y)*scale+dy
+						i := img.PixOffset(px, py)
+						img.Pix[i], img.Pix[i+1], img.Pix[i+2] = 0, 0, 0
+					}
+				}
+			}
+		}
+	}
+	return img
 }
 
 // sleepTimeoutAC returns the plugged-in sleep timeout in seconds (0 = never).

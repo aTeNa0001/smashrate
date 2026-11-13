@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"image/png"
 )
@@ -508,8 +509,15 @@ func (w *windowsEngine) Recognize(img image.Image) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), w.timeout)
 	defer cancel()
 	// powershell.exe (5.1) has the WinRT projection; pwsh 7 does not.
-	return runCapture(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+	text, err := runCapture(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 		"-File", w.script, "-Path", path, "-Lang", w.lang)
+	if err != nil {
+		return "", err
+	}
+	if !utf8.ValidString(text) {
+		return "", errors.New("ocr: output is not UTF-8 (console encoding); rebuild with the current winocr.ps1")
+	}
+	return text, nil
 }
 
 // ---------- external command ----------

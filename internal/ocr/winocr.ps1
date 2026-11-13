@@ -3,6 +3,9 @@
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File winocr.ps1 -Path img.png -Lang ja
 param([Parameter(Mandatory = $true)][string]$Path, [string]$Lang = "ja")
 $ErrorActionPreference = "Stop"
+# The caller (smashrate) reads stdout as UTF-8; the default console encoding
+# is the OEM code page (Shift-JIS on Japanese Windows), which garbles kana.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
 $null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
