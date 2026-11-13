@@ -28,6 +28,9 @@ const PlaceholderLabel = "#placeholder"
 // SlotReading is what was recognised in one player column.
 type SlotReading struct {
 	Port        int
+	Winner      bool          // placement 1: the panel is enlarged, regions shift
+	CharRegion  config.Region // regions actually used (shifted for the winner)
+	NameRegion  config.Region
 	Name        string // player name from the name tag, "" if unknown
 	Placeholder bool   // the tag is a default label or a CPU, not a person
 	NameDist    int
@@ -170,27 +173,11 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			continue
 		}
 		r := &Reading{Players: layout.Players, Team: layout.Mode == "team", Layout: layout}
-		for _, slot := range layout.Slots {
+		for i, slot := range layout.Slots {
 			sr := SlotReading{Port: slot.Port}
-			sr.NameHash = DHash(img, Rect(b, slot.Name))
-			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
-				sr.NameDist = dist
-				if strings.HasPrefix(lbl, "#") {
-					sr.Placeholder = true
-				} else {
-					sr.Name = lbl
-				}
-			} else {
-				sr.NameDist = dist
-			}
-			sr.CharHash = DHash(img, Rect(b, slot.Char))
-			if lbl, dist, ok := d.classify(KindChar, sr.CharHash, d.cfg.CharThreshold); ok {
-				sr.Char, sr.CharDist = lbl, dist
-			} else {
-				sr.CharDist = dist
-			}
-			// The placement numeral is matched by its shape signature, which is
-			// independent of the column and of what is drawn behind it.
+			// The placement numeral first: it is matched by its shape
+			// signature (independent of the column and background), and
+			// knowing who won tells where that panel's text sits.
 			if sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, slot.Rank))); ok {
 				sr.RankHash = sig
 				if lbl, dist, ok := d.classifyRank(sig); ok {
@@ -201,6 +188,27 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 				}
 			} else {
 				sr.RankDist = 64
+			}
+			sr.Winner = sr.Rank == 1
+			sr.CharRegion = layout.CharRegion(i, sr.Winner)
+			sr.NameRegion = layout.NameRegion(i, sr.Winner)
+
+			sr.NameHash = DHash(img, Rect(b, sr.NameRegion))
+			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
+				sr.NameDist = dist
+				if strings.HasPrefix(lbl, "#") {
+					sr.Placeholder = true
+				} else {
+					sr.Name = lbl
+				}
+			} else {
+				sr.NameDist = dist
+			}
+			sr.CharHash = DHash(img, Rect(b, sr.CharRegion))
+			if lbl, dist, ok := d.classify(KindChar, sr.CharHash, d.cfg.CharThreshold); ok {
+				sr.Char, sr.CharDist = lbl, dist
+			} else {
+				sr.CharDist = dist
 			}
 			r.Slots = append(r.Slots, sr)
 		}
@@ -258,12 +266,17 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 		return err
 	}
 	for i, slot := range layout.Slots {
+		// the winner's panel is enlarged: its caption and tag sit lower
+		winner := i < len(ranks) && strings.TrimSpace(ranks[i]) != "" && func() bool {
+			lbl, err := NormalizeLabel(KindRank, ranks[i])
+			return err == nil && lbl == "1"
+		}()
 		if i < len(chars) && strings.TrimSpace(chars[i]) != "" {
 			lbl, err := NormalizeLabel(KindChar, chars[i])
 			if err != nil {
 				return err
 			}
-			if err := c.AddTemplate(KindChar, lbl, DHash(img, Rect(b, slot.Char))); err != nil {
+			if err := c.AddTemplate(KindChar, lbl, DHash(img, Rect(b, layout.CharRegion(i, winner)))); err != nil {
 				return err
 			}
 		}
@@ -285,7 +298,7 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 			if err != nil {
 				return err
 			}
-			if err := c.AddTemplate(KindName, p.Name, DHash(img, Rect(b, slot.Name))); err != nil {
+			if err := c.AddTemplate(KindName, p.Name, DHash(img, Rect(b, layout.NameRegion(i, winner)))); err != nil {
 				return err
 			}
 		}

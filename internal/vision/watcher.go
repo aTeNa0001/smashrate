@@ -308,12 +308,14 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 			break
 		}
 		slot := layout.Slots[i]
+		// Regions as the detector used them (shifted for the winner's panel).
+		nameRect, charRect := Rect(b, s.NameRegion), Rect(b, s.CharRegion)
 		// The name tag identifies the human: learned hash first, OCR for a
 		// tag never seen before, manual labelling as the last resort.
 		name, placeholder := s.Name, s.Placeholder
 		if name == "" && !placeholder {
 			var created bool
-			name, created, placeholder = w.readTag(Crop(img, Rect(b, slot.Name)), s.NameHash)
+			name, created, placeholder = w.readTag(Crop(img, nameRect), s.NameHash)
 			if created {
 				newcomers = append(newcomers, name)
 			}
@@ -324,18 +326,18 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		}
 		if name == "" {
 			unidentified = append(unidentified, s.Port)
-			id := w.stash(KindName, s.NameHash, img, Rect(b, slot.Name))
+			id := w.stash(KindName, s.NameHash, img, nameRect)
 			unknown = append(unknown, fmt.Sprintf("P%d 名前タグ → %s", s.Port, id))
 			continue
 		}
-		// Character and placement: learned hash, else OCR of the caption /
-		// badge (self-learning), else a crop for manual labelling.
+		// Character: learned hash, else OCR of the caption (self-learning),
+		// else a crop for manual labelling.
 		char := s.Char
 		if char == "" {
-			char = w.readChar(Crop(img, Rect(b, slot.Char)), s.CharHash)
+			char = w.readChar(Crop(img, charRect), s.CharHash)
 		}
 		if char == "" {
-			id := w.stash(KindChar, s.CharHash, img, Rect(b, slot.Char))
+			id := w.stash(KindChar, s.CharHash, img, charRect)
 			unknown = append(unknown, fmt.Sprintf("P%d キャラ → %s", s.Port, id))
 		}
 		// Placement numerals are matched by shape (built-in 1 and 2, the

@@ -16,6 +16,9 @@ func TestNormalizeName(t *testing.T) {
 		"Ｔａｒｏ":          "Taro",
 		"":              "",
 		"   \n ":        "",
+		"2P\nぎ ん ぴ か":   "ぎんぴか", // badge line above the name is skipped
+		"CP\nコンピューター2":  "コンピューター2",
+		"2P":            "2P", // nothing but the badge: still a placeholder
 	} {
 		if got := NormalizeName(in); got != want {
 			t.Fatalf("%q: got %q want %q", in, got, want)

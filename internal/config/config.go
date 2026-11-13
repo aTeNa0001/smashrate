@@ -113,6 +113,21 @@ type Layout struct {
 	Mode    string `toml:"mode"`   // "" (1on1 / free-for-all) or "team"
 	Screen  Region `toml:"screen"` // region that identifies "this is the results screen"
 	Slots   []Slot `toml:"slots"`
+	// WinnerShiftY: the 1st-place panel is drawn slightly enlarged, which
+	// moves its caption and name tag down by this fraction of the frame.
+	WinnerShiftY float64 `toml:"winner_shift_y"`
+}
+
+// CharRegion / NameRegion return a slot's regions, shifted for the winner's
+// enlarged panel when winner is true.
+func (l Layout) CharRegion(i int, winner bool) Region { return l.shifted(l.Slots[i].Char, winner) }
+func (l Layout) NameRegion(i int, winner bool) Region { return l.shifted(l.Slots[i].Name, winner) }
+
+func (l Layout) shifted(r Region, winner bool) Region {
+	if winner {
+		r.Y += l.WinnerShiftY
+	}
+	return r
 }
 
 // ScreenLabel is the template label that identifies this layout's screen.
@@ -199,7 +214,7 @@ func defaultLayouts() []Layout {
 		// Team battles use the same screen; teammates are told apart by
 		// sharing a placement, so no separate layout is needed. A layout with
 		// mode = "team" can still be configured if a build ever differs.
-		out = append(out, Layout{Players: n, Screen: screen, Slots: slots})
+		out = append(out, Layout{Players: n, Screen: screen, Slots: slots, WinnerShiftY: 0.03})
 	}
 	return out
 }

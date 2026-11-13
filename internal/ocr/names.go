@@ -8,10 +8,16 @@ import (
 	"github.com/aTeNa0001/smashrate/internal/characters"
 )
 
-// NormalizeName cleans OCR output into a player name: first non-empty line,
-// whitespace removed (the Windows engine spaces out Japanese characters),
-// full-width ASCII folded to half-width.
+// badgeLine matches the port badge ("1P", "2P", "CP") that can sit on the
+// line above the name when the crop is tall.
+var badgeLine = regexp.MustCompile(`(?i)^[1-8]?[pc]p?$`)
+
+// NormalizeName cleans OCR output into a player name: the first non-empty
+// line that is not just the port badge, whitespace removed (the Windows
+// engine spaces out Japanese characters), full-width ASCII folded to
+// half-width.
 func NormalizeName(text string) string {
+	first := ""
 	for _, line := range strings.Split(text, "\n") {
 		var b strings.Builder
 		for _, r := range line {
@@ -24,11 +30,19 @@ func NormalizeName(text string) string {
 			}
 			b.WriteRune(r)
 		}
-		if s := b.String(); s != "" {
-			return s
+		s := b.String()
+		if s == "" {
+			continue
 		}
+		if badgeLine.MatchString(s) {
+			if first == "" {
+				first = s
+			}
+			continue
+		}
+		return s
 	}
-	return ""
+	return first
 }
 
 var placeholderTag = regexp.MustCompile(`(?i)^(p|player|cpu|com)[ -]?[1-8]?$`)

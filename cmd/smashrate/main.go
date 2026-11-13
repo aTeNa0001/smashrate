@@ -411,6 +411,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	names := fs.String("names", "", "comma-separated player names per column (the name tags)")
 	scale := fs.Int("scale", 0, "regions: also write up_*.png crops enlarged by this factor (what the OCR engine sees)")
 	withOCR := fs.Bool("ocr", false, "test: also run the OCR engine on each column's name tag and caption and print what it reads")
+	winner := fs.Int("winner", 0, "regions: column (1-based) of the 1st-place panel, whose caption/tag regions are shifted down")
 	fs.Parse(rest)
 
 	switch sub {
@@ -514,14 +515,15 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if err := save("screen", layout.Screen); err != nil {
 			return err
 		}
-		for _, s := range layout.Slots {
-			if err := save(fmt.Sprintf("p%d_char", s.Port), s.Char); err != nil {
+		for i, s := range layout.Slots {
+			won := *winner == i+1
+			if err := save(fmt.Sprintf("p%d_char", s.Port), layout.CharRegion(i, won)); err != nil {
 				return err
 			}
 			if err := save(fmt.Sprintf("p%d_rank", s.Port), s.Rank); err != nil {
 				return err
 			}
-			if err := save(fmt.Sprintf("p%d_name", s.Port), s.Name); err != nil {
+			if err := save(fmt.Sprintf("p%d_name", s.Port), layout.NameRegion(i, won)); err != nil {
 				return err
 			}
 		}
@@ -574,16 +576,14 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 				return errors.New("ocr is disabled in config (vision.ocr.engine)")
 			}
 			b := img.Bounds()
-			for i, slot := range r.Layout.Slots {
-				if i >= len(r.Slots) {
-					break
-				}
+			for i, slot := range r.Slots {
+				_ = i
 				var names, caps []string
-				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.Name))) {
+				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.NameRegion))) {
 					t, _ := eng.Recognize(v)
 					names = append(names, fmt.Sprintf("%q", ocr.NormalizeName(t)))
 				}
-				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.Char))) {
+				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.CharRegion))) {
 					t, _ := eng.Recognize(v)
 					key, _ := ocr.MatchCharacter(t)
 					caps = append(caps, fmt.Sprintf("%q→%s", ocr.NormalizeJoined(t), key))

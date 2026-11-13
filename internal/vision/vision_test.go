@@ -23,6 +23,17 @@ func paint(img *image.RGBA, r image.Rectangle, seed int64) {
 	}
 }
 
+// testVisionCfg is the default config without the winner-panel shift: the
+// synthetic frames paint every column at the plain regions. The shift itself
+// is verified against real screenshots.
+func testVisionCfg() config.VisionConfig {
+	cfg := config.Default().Vision
+	for i := range cfg.Layouts {
+		cfg.Layouts[i].WinnerShiftY = 0
+	}
+	return cfg
+}
+
 // paintGlyph draws a bright digit-like shape (a tall block with a
 // seed-dependent notch) on a dark background, as the placement numeral
 // isolation expects. Different seeds give clearly different shapes.
@@ -93,7 +104,7 @@ func TestTeachDetectAndRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	cfg := config.Default().Vision
+	cfg := testVisionCfg()
 	cfg.StableFrames = 2
 	cfg.CooldownSeconds = 1
 
@@ -156,7 +167,7 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	cfg := config.Default().Vision
+	cfg := testVisionCfg()
 	cfg.StableFrames = 1
 	cfg.CooldownSeconds = 1
 
@@ -257,7 +268,7 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	cfg := config.Default().Vision
+	cfg := testVisionCfg()
 	cfg.StableFrames = 1
 	cfg.CooldownSeconds = 1
 	cfg.OCR.Engine = "none"
@@ -342,7 +353,7 @@ func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	cfg := config.Default().Vision
+	cfg := testVisionCfg()
 	cfg.StableFrames = 1
 	cfg.CooldownSeconds = 1
 	cfg.OCR.Engine = "none"
@@ -417,7 +428,7 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	cfg := config.Default().Vision
+	cfg := testVisionCfg()
 	cfg.StableFrames = 1
 	cfg.CooldownSeconds = 1
 	cfg.OCR.Engine = "none"
