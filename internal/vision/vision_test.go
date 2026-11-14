@@ -119,10 +119,13 @@ func TestTeachDetectAndRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// same screen appears twice -> recorded once
+	// the screen stays for three frames, then disappears -> recorded once
+	// (stable_frames = 2: a single-frame flash would be ignored)
 	w.Process(f1)
 	w.Process(f1)
 	w.Process(f1)
+	w.Flush()
+	feed(w, f1) // shown again within the cooldown: not recorded twice
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 {
 		t.Fatalf("expected 1 recorded match, got %d; msgs=%v", len(ms), msgs)
@@ -133,10 +136,10 @@ func TestTeachDetectAndRecord(t *testing.T) {
 
 	// a frame with a known rank but unknown character: match recorded without
 	// the character, crop stashed, learnable afterwards.
-	w.Process(frame(cfg, 2, []int64{13, 12}, []int64{21, 22}, 41, 42)) // break stability
-	f2 := frame(cfg, 2, []int64{31, 12}, []int64{22, 21}, 41, 42)      // P2 wins, P1 plays unknown char
+	f2 := frame(cfg, 2, []int64{31, 12}, []int64{22, 21}, 41, 42) // P2 wins, P1 plays unknown char
 	w.Process(f2)
 	w.Process(f2)
+	w.Flush()
 	ms, _ = c.Matches(10, 0)
 	if len(ms) != 2 {
 		t.Fatalf("expected 2 matches, got %d; msgs=%v", len(ms), msgs)
@@ -181,7 +184,7 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Process(f1)
+	feed(w, f1)
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 || ms[0].Entries[0].PlayerName != "Taro" || ms[0].Entries[1].PlayerName != "Hanako" {
 		t.Fatalf("name-tag identification failed: %+v msgs=%v", ms, msgs)
@@ -189,7 +192,7 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 
 	// players swap seats: names follow the tags, not the ports
 	f2 := frame(cfg, 2, []int64{12, 11}, []int64{21, 22}, 42, 41)
-	w.Process(f2)
+	feed(w, f2)
 	ms, _ = c.Matches(10, 0)
 	if len(ms) != 2 || ms[0].Entries[0].PlayerName != "Hanako" || ms[0].Entries[0].Rank != 1 {
 		t.Fatalf("swapped seats: %+v", ms[0].Entries)
@@ -197,7 +200,7 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 
 	// a newcomer with an unknown tag: nothing recorded, tag stashed, learnable
 	f3 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 77)
-	w.Process(f3)
+	feed(w, f3)
 	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
 		t.Fatalf("unknown tag should block recording, got %d matches", len(ms))
 	}
@@ -218,7 +221,7 @@ func TestNameTagsIdentifyPlayersWithoutPorts(t *testing.T) {
 	if _, err := c.PlayerByName("Jiro"); err != nil {
 		t.Fatal("learning a name tag should create the player")
 	}
-	w.Process(f3)
+	feed(w, f3)
 	if ms, _ = c.Matches(10, 0); len(ms) != 3 || ms[0].Entries[1].PlayerName != "Jiro" {
 		t.Fatalf("after learning the tag: %+v", ms)
 	}
@@ -292,7 +295,7 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	}
 	w.SetOCR(fake)
 
-	w.Process(f1)
+	feed(w, f1)
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 {
 		t.Fatalf("expected the match to be recorded via OCR, got %d; msgs=%v", len(ms), msgs)
@@ -314,7 +317,7 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	}
 
 	// same tags again: matched by hash, no OCR
-	w.Process(frame(cfg, 2, []int64{12, 11}, []int64{21, 22}, 42, 41)) // seats swapped, Hanako (now P1) wins
+	feed(w, frame(cfg, 2, []int64{12, 11}, []int64{21, 22}, 42, 41)) // seats swapped, Hanako (now P1) wins
 	ms, _ = c.Matches(10, 0)
 	if len(ms) != 2 || ms[0].Entries[0].PlayerName != "Hanako" || ms[0].Entries[0].Rank != 1 || ms[0].Entries[1].PlayerName != "たろう" {
 		t.Fatalf("second match: %+v", ms[0].Entries)
@@ -325,7 +328,7 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 
 	// OCR reads nothing: not recorded, crop stashed for manual labelling
 	f3 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 99)
-	w.Process(f3)
+	feed(w, f3)
 	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
 		t.Fatal("unreadable tag must block recording")
 	}
@@ -338,7 +341,7 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	l4, _ := cfg.Layout(2, "")
 	cr := Crop(f4, Rect(f4.Bounds(), l4.Slots[1].Name))
 	fake.byHash[DHash(cr, cr.Bounds())] = "P 2"
-	w.Process(f4)
+	feed(w, f4)
 	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
 		t.Fatal("placeholder tag must block recording")
 	}
@@ -381,7 +384,7 @@ func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
 	w.SetOCR(fake)
 	_ = b
 
-	w.Process(f1)
+	feed(w, f1)
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 {
 		t.Fatalf("expected a recorded match, got %d", len(ms))
@@ -393,7 +396,7 @@ func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
 	calls := fake.calls
 	// everything is now learned: the same screen needs no OCR at all
 	w.lastSeen = ""
-	w.Process(f1)
+	feed(w, f1)
 	if fake.calls != calls {
 		t.Fatalf("expected no further OCR, got %d more calls", fake.calls-calls)
 	}
@@ -406,7 +409,7 @@ func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
 	fake.byHash[hashOf(f2, layout.Slots[1].Name)] = "コ ン ピ ュ ー タ ー 2"
 	var msgs []string
 	w.notify = func(s string) { msgs = append(msgs, s) }
-	w.Process(f2)
+	feed(w, f2)
 	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
 		t.Fatal("match with a CPU must not be recorded")
 	}
@@ -416,7 +419,7 @@ func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
 	// and the CPU tag is remembered as a placeholder: no OCR next time
 	calls = fake.calls
 	w.lastSeen = ""
-	w.Process(f2)
+	feed(w, f2)
 	if fake.calls != calls {
 		t.Fatal("placeholder tag should be matched by hash, not OCR'd again")
 	}
@@ -449,7 +452,7 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Process(tf)
+	feed(w, tf)
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 || ms[0].Mode != core.ModeTeam {
 		t.Fatalf("team screen should record a team battle: %+v", ms)
@@ -466,7 +469,7 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 	}
 
 	// distinct placements on the same screen: a free-for-all
-	w.Process(ff)
+	feed(w, ff)
 	ms, _ = c.Matches(10, 0)
 	if len(ms) != 2 || ms[0].Mode != core.ModeFFA {
 		t.Fatalf("distinct placements should record a free-for-all: %+v", ms)
@@ -477,7 +480,7 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 	w.notify = func(s string) { msgs = append(msgs, s) }
 	w.lastSeen = ""
 	all := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 21, 21, 21}, 41, 42, 43, 44)
-	w.Process(all)
+	feed(w, all)
 	if ms, _ = c.Matches(10, 0); len(ms) != 2 || len(msgs) != 1 || !strings.Contains(msgs[0], "全員が同順位") {
 		t.Fatalf("all tied: matches=%d msgs=%v", len(ms), msgs)
 	}
@@ -496,3 +499,7 @@ func TestNormalizeLabel(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// feed processes one frame and flushes the burst, as a screen that is
+// shown and then disappears would.
+func feed(w *Watcher, img image.Image) { w.Process(img); w.Flush() }

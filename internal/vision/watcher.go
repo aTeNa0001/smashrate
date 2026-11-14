@@ -42,11 +42,34 @@ type Watcher struct {
 	lastFrame image.Image
 	stats     Status
 	events    []Event // ring of recent notifications
-	lastKey   string
-	stable    int
+	burst     *burst  // readings collected while the results screen is visible
 	lastSeen  string
 	cooldown  time.Time
+	// picture-change tracking for idling
+	lastHash   uint64
+	lastChange time.Time
+	now        func() time.Time // tests
 }
+
+// burst is one appearance of the results screen: every reading made while
+// it was visible, so that the most frequent one is recorded even when the
+// screen was shown for a single frame or the panels were still animating.
+type burst struct {
+	start, last time.Time
+	frames      int
+	readings    map[string]*burstEntry
+	order       []string
+}
+
+type burstEntry struct {
+	reading *Reading
+	img     image.Image
+	count   int
+	last    time.Time
+}
+
+// errIdle is returned by runUntilIdle when the picture stopped changing.
+var errIdle = errors.New("picture unchanged")
 
 // NewWatcher wires the detector to the core. notify may be nil.
 func NewWatcher(cfg config.VisionConfig, c *core.Core, dataDir string, notify func(string)) (*Watcher, error) {
@@ -66,7 +89,7 @@ func NewWatcher(cfg config.VisionConfig, c *core.Core, dataDir string, notify fu
 	} else {
 		log.Printf("vision: name-tag OCR disabled; unknown tags must be labelled by hand")
 	}
-	return &Watcher{cfg: cfg, core: c, det: det, dataDir: dataDir, notify: notify, ocr: eng, pending: map[string]pendingCrop{}}, nil
+	return &Watcher{cfg: cfg, core: c, det: det, dataDir: dataDir, notify: notify, ocr: eng, pending: map[string]pendingCrop{}, now: time.Now}, nil
 }
 
 // SetOCR replaces the OCR engine (tests, or a custom engine).
@@ -163,20 +186,31 @@ func (w *Watcher) LastFrame() image.Image {
 
 // Status is a snapshot of what the watcher has been doing, for /status.
 type Status struct {
-	Frames          int64          `json:"frames"`
-	LastFrameAt     time.Time      `json:"last_frame_at"`
-	Detections      int64          `json:"detections"`
-	LastDetectionAt time.Time      `json:"last_detection_at"`
-	LastMessage     string         `json:"last_message"`
-	LastMessageAt   time.Time      `json:"last_message_at"`
-	Pending         []string       `json:"pending"`
-	Templates       map[string]int `json:"templates"`
-	OCR             string         `json:"ocr"`
+	Frames          int64     `json:"frames"`
+	LastFrameAt     time.Time `json:"last_frame_at"`
+	Detections      int64     `json:"detections"`
+	LastDetectionAt time.Time `json:"last_detection_at"`
+	// LastScreenFrames / LastScreenMs: how long the results screen was
+	// visible the last time it appeared (frames seen, milliseconds).
+	LastScreenFrames int `json:"last_screen_frames"`
+	LastScreenMs     int `json:"last_screen_ms"`
+	// Idle: ffmpeg is stopped because the picture has not changed; the board
+	// is probed periodically.
+	Idle          bool           `json:"idle"`
+	IdleSince     time.Time      `json:"idle_since"`
+	LastMessage   string         `json:"last_message"`
+	LastMessageAt time.Time      `json:"last_message_at"`
+	Pending       []string       `json:"pending"`
+	Templates     map[string]int `json:"templates"`
+	OCR           string         `json:"ocr"`
 }
 
 // ScreenTemplates is how many results-screen templates are known (0 = the
 // watcher cannot recognise anything yet).
 func (s Status) ScreenTemplates() int { return s.Templates[KindScreen] }
+
+// ScreenSeconds is LastScreenMs in seconds, for templates.
+func (s Status) ScreenSeconds() float64 { return float64(s.LastScreenMs) / 1000 }
 
 // Status returns the current counters and the learned-template counts.
 func (w *Watcher) Status() Status {
@@ -201,8 +235,13 @@ func (w *Watcher) StatusText() string {
 	var sb strings.Builder
 	if s.LastFrameAt.IsZero() {
 		sb.WriteString("キャプチャ: 映像がまだ来ていない（Switch の電源とキャプチャボードの USB を確認）")
+	} else if s.Idle {
+		fmt.Fprintf(&sb, "キャプチャ: 待機中（%s から映像に変化なし。定期的に確認し、変化があれば再開）", s.IdleSince.Local().Format("15:04"))
 	} else {
 		fmt.Fprintf(&sb, "キャプチャ: 受信中（最後のフレーム %s、%d 枚）", s.LastFrameAt.Local().Format("15:04:05"), s.Frames)
+	}
+	if s.LastScreenFrames > 0 {
+		fmt.Fprintf(&sb, "\nリザルト画面が前回見えていた時間: %.1f 秒（%d フレーム）", float64(s.LastScreenMs)/1000, s.LastScreenFrames)
 	}
 	if s.Templates[KindScreen] == 0 {
 		sb.WriteString("\nリザルト画面: 未学習（vision teach が必要）")
@@ -232,11 +271,26 @@ func (w *Watcher) note(msg string) {
 	w.notify(msg)
 }
 
-// Run consumes frames until ctx ends or the source is exhausted.
+// Run consumes frames until ctx ends or the source is exhausted. It never
+// idles; see RunLoop for the capture-board loop used by `serve`.
 func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
+	w.warnUntaught()
+	err := w.consume(ctx, src, false)
+	w.Flush()
+	return err
+}
+
+func (w *Watcher) warnUntaught() {
 	if w.det.TemplateCount(KindScreen) == 0 {
 		w.notify("リザルト画面のテンプレートが未登録です。リザルト画面のスクショで `smashrate vision teach -image shot.png -players N` を一度実行してください（キャラ・順位・名前は以後自動で学習します）。")
 	}
+}
+
+// consume processes frames from src until it ends, ctx is cancelled or, when
+// idling is enabled, the picture has not changed for IdleAfterSeconds
+// (errIdle). The source is not closed.
+func (w *Watcher) consume(ctx context.Context, src FrameSource, idling bool) error {
+	idleAfter := time.Duration(w.cfg.IdleAfterSeconds) * time.Second
 	for {
 		select {
 		case <-ctx.Done():
@@ -251,48 +305,210 @@ func (w *Watcher) Run(ctx context.Context, src FrameSource) error {
 			return err
 		}
 		w.Process(img)
+		if idling && idleAfter > 0 && w.burst == nil && w.now().Sub(w.lastChange) >= idleAfter {
+			return errIdle
+		}
 	}
 }
 
-// Process handles one frame. Exported so tests and `vision test` can drive it.
+// RunLoop keeps the capture board open through `serve`: it reopens the
+// source when it fails, and when the picture has not changed for
+// IdleAfterSeconds it closes ffmpeg (the decoding costs CPU and heat even
+// when the Switch is off) and only probes the board for a few seconds every
+// IdlePollSeconds until something changes.
+func (w *Watcher) RunLoop(ctx context.Context, open func() (FrameSource, error)) {
+	w.warnUntaught()
+	retry := func() bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(10 * time.Second):
+			return true
+		}
+	}
+	var src FrameSource
+	for ctx.Err() == nil {
+		if src == nil {
+			s, err := open()
+			if err != nil {
+				log.Printf("vision: %v (retrying in 10s)", err)
+				if !retry() {
+					return
+				}
+				continue
+			}
+			src = s
+			w.lastChange = w.now()
+		}
+		err := w.consume(ctx, src, true)
+		src.Close()
+		src = nil
+		w.Flush()
+		if ctx.Err() != nil {
+			return
+		}
+		if !errors.Is(err, errIdle) {
+			log.Printf("vision: source ended: %v (restarting in 10s)", err)
+			if !retry() {
+				return
+			}
+			continue
+		}
+		src = w.idle(ctx, open)
+	}
+}
+
+// idle waits for the picture to change. It returns an open source positioned
+// on live video, or nil when ctx ended.
+func (w *Watcher) idle(ctx context.Context, open func() (FrameSource, error)) FrameSource {
+	ref := w.lastHash
+	w.mu.Lock()
+	w.stats.Idle, w.stats.IdleSince = true, w.now()
+	w.mu.Unlock()
+	log.Printf("vision: picture unchanged for %ds; capture paused, probing every %ds", w.cfg.IdleAfterSeconds, w.pollSeconds())
+	defer func() {
+		w.mu.Lock()
+		w.stats.Idle = false
+		w.mu.Unlock()
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(time.Duration(w.pollSeconds()) * time.Second):
+		}
+		src, err := open()
+		if err != nil {
+			log.Printf("vision: probe: %v", err)
+			continue
+		}
+		// The board replays its logo for a couple of seconds after every
+		// open, so look at a few seconds of frames before deciding.
+		deadline := w.now().Add(4 * time.Second)
+		live := false
+		for w.now().Before(deadline) && ctx.Err() == nil {
+			img, err := src.Next()
+			if err != nil {
+				break
+			}
+			w.mu.Lock()
+			w.lastFrame, w.stats.LastFrameAt = img, w.now()
+			w.mu.Unlock()
+			if Hamming(DHash(img, img.Bounds()), ref) > 10 {
+				live = true
+				break
+			}
+		}
+		if live {
+			log.Printf("vision: picture changed; capture resumed")
+			w.lastChange = w.now()
+			return src
+		}
+		src.Close()
+	}
+}
+
+func (w *Watcher) pollSeconds() int {
+	if w.cfg.IdlePollSeconds > 0 {
+		return w.cfg.IdlePollSeconds
+	}
+	return 30
+}
+
+// Process handles one frame. Readings of the results screen are collected
+// into a burst; the burst is recorded when the screen disappears or has
+// been visible for SettleSeconds (see Flush). Exported for tests.
 func (w *Watcher) Process(img image.Image) {
+	now := w.now()
+	h := DHash(img, img.Bounds())
 	w.mu.Lock()
 	w.lastFrame = img
 	w.stats.Frames++
-	w.stats.LastFrameAt = time.Now()
+	w.stats.LastFrameAt = now
 	w.mu.Unlock()
+	if w.lastChange.IsZero() || Hamming(h, w.lastHash) > 6 {
+		w.lastHash, w.lastChange = h, now
+	}
 	reading, ok := w.det.Detect(img)
 	if !ok {
-		w.lastKey, w.stable = "", 0
+		// the screen is gone: record what was collected
+		w.Flush()
 		return
 	}
 	w.mu.Lock()
 	w.stats.Detections++
-	w.stats.LastDetectionAt = time.Now()
+	w.stats.LastDetectionAt = now
 	w.mu.Unlock()
-	key := reading.Key()
-	if key == w.lastKey {
-		w.stable++
-	} else {
-		w.lastKey, w.stable = key, 1
+	if w.burst == nil {
+		w.burst = &burst{start: now, readings: map[string]*burstEntry{}}
 	}
+	b := w.burst
+	b.last = now
+	b.frames++
+	key := reading.Key()
+	e := b.readings[key]
+	if e == nil {
+		e = &burstEntry{}
+		b.readings[key] = e
+		b.order = append(b.order, key)
+	}
+	e.reading, e.img, e.last = reading, img, now
+	e.count++
+	settle := time.Duration(w.cfg.SettleSeconds * float64(time.Second))
+	if settle <= 0 {
+		settle = 1500 * time.Millisecond
+	}
+	if now.Sub(b.start) >= settle {
+		w.Flush()
+	}
+}
+
+// Flush records the current burst, if any: the reading seen most often
+// (the latest on a tie), provided it was seen at least StableFrames times.
+func (w *Watcher) Flush() {
+	b := w.burst
+	if b == nil {
+		return
+	}
+	w.burst = nil
+	var best *burstEntry
+	var bestKey string
+	for _, k := range b.order {
+		e := b.readings[k]
+		if best == nil || e.count > best.count || (e.count == best.count && e.last.After(best.last)) {
+			best, bestKey = e, k
+		}
+	}
+	ms := int(b.last.Sub(b.start)/time.Millisecond) + int(1000/w.frameRate())
+	w.mu.Lock()
+	w.stats.LastScreenFrames, w.stats.LastScreenMs = b.frames, ms
+	w.mu.Unlock()
 	need := w.cfg.StableFrames
 	if need <= 0 {
 		need = 1
 	}
-	if w.stable != need {
+	if best.count < need {
+		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
-	if time.Now().Before(w.cooldown) && key == w.lastSeen {
+	now := w.now()
+	if now.Before(w.cooldown) && bestKey == w.lastSeen {
 		return
 	}
 	cd := time.Duration(w.cfg.CooldownSeconds) * time.Second
 	if cd <= 0 {
 		cd = 60 * time.Second
 	}
-	w.cooldown = time.Now().Add(cd)
-	w.lastSeen = key
-	w.handle(img, reading)
+	w.cooldown = now.Add(cd)
+	w.lastSeen = bestKey
+	w.handle(best.img, best.reading)
+}
+
+func (w *Watcher) frameRate() float64 {
+	if w.cfg.FPS > 0 {
+		return w.cfg.FPS
+	}
+	return 4
 }
 
 func (w *Watcher) handle(img image.Image, r *Reading) {

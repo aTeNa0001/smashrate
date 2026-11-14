@@ -43,12 +43,19 @@ input = "video=USB Video"
 # the name-tag OCR (kana are misread when smaller).
 width = 1920
 height = 1080
-# The results screen can be short: 4 frames/s with 2 identical readings in a
-# row detects it within half a second. OCR then runs on the captured frame,
-# so the screen may disappear right after.
-fps = 4
-stable_frames = 2
+# The results screen can be very short (players skip it with a button). The
+# watcher collects readings while it is visible and records the most frequent
+# one as soon as it disappears, or after settle_seconds if it stays. A single
+# frame (1/6 s at fps = 6) is enough with stable_frames = 1.
+fps = 6
+stable_frames = 1
+settle_seconds = 1.5
 cooldown_seconds = 90
+# Heat / CPU: decoding the board's video costs the same whether the Switch is
+# on or not. When the picture has not changed for idle_after_seconds, ffmpeg is
+# stopped and the board is probed for a few seconds every idle_poll_seconds.
+idle_after_seconds = 300
+idle_poll_seconds = 30
 # Hamming distance (0-64) allowed between a region hash and a learned template.
 screen_threshold = 10
 char_threshold = 12

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -110,6 +111,16 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 	if !cfg.Vision.Enabled {
 		add("SKIP", "キャプチャ", "vision.enabled = false", "自動記録を使うなら true にして input を設定")
 	} else {
+		if cfg.Vision.StableFrames > 1 {
+			add("WARN", "検出の感度", fmt.Sprintf("stable_frames = %d: リザルト画面が %d フレーム未満しか出ないと記録されない", cfg.Vision.StableFrames, cfg.Vision.StableFrames), "smashrate.toml の stable_frames を 1 にする（画面が一瞬でも記録される）")
+		} else {
+			add("OK", "検出の感度", fmt.Sprintf("1 フレーム（%.2f 秒）見えれば記録", 1/math.Max(cfg.Vision.FPS, 1)), "")
+		}
+		if cfg.Vision.IdleAfterSeconds > 0 {
+			add("OK", "待機モード", fmt.Sprintf("映像が %d 秒変化しなければ取り込みを止め、%d 秒ごとに確認（発熱対策）", cfg.Vision.IdleAfterSeconds, cfg.Vision.IdlePollSeconds), "")
+		} else {
+			add("WARN", "待機モード", "idle_after_seconds = 0: Switch が切れていても常時デコードし続ける", "smashrate.toml から idle_after_seconds の行を消すか 300 にする")
+		}
 		if path, err := exec.LookPath(cfg.Vision.FFmpeg); err != nil {
 			add("FAIL", "ffmpeg", cfg.Vision.FFmpeg+" が見つからない", "winget install Gyan.FFmpeg のあと新しいターミナルで再実行")
 		} else {

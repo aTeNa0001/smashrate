@@ -225,25 +225,7 @@ func serve(cfg config.Config, c *core.Core) error {
 		}()
 	}
 	if watcher != nil {
-		go func() {
-			for ctx.Err() == nil {
-				src, err := vision.OpenFFmpeg(cfg.Vision)
-				if err != nil {
-					log.Printf("vision: %v (retrying in 10s)", err)
-				} else {
-					err = watcher.Run(ctx, src)
-					src.Close()
-					if ctx.Err() == nil {
-						log.Printf("vision: source ended: %v (restarting in 10s)", err)
-					}
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(10 * time.Second):
-				}
-			}
-		}()
+		go watcher.RunLoop(ctx, func() (vision.FrameSource, error) { return vision.OpenFFmpeg(cfg.Vision) })
 	}
 
 	hs := &http.Server{Addr: cfg.Server.Addr, Handler: srv}

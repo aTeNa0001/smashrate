@@ -19,8 +19,10 @@
 <tr><th>項目</th><th>値</th></tr>
 <tr><td>受信フレーム数</td><td class="n">{{$s.Frames}}</td></tr>
 <tr><td>最後のフレーム</td><td>{{if $s.LastFrameAt.IsZero}}<span class="down">まだ映像が来ていない</span>{{else}}{{date $s.LastFrameAt}}{{end}}</td></tr>
+<tr><td>取り込み</td><td>{{if $s.Idle}}待機中（{{date $s.IdleSince}} から映像に変化なし。CPU 節約のため停止し、定期的に確認。変化があれば自動で再開）{{else}}動作中{{end}}</td></tr>
 <tr><td>リザルト画面を検出した回数</td><td class="n">{{$s.Detections}}</td></tr>
 <tr><td>最後の検出</td><td>{{if $s.LastDetectionAt.IsZero}}—{{else}}{{date $s.LastDetectionAt}}{{end}}</td></tr>
+<tr><td>リザルト画面が前回見えていた時間</td><td>{{if $s.LastScreenFrames}}{{f1 $s.ScreenSeconds}} 秒（{{$s.LastScreenFrames}} フレーム）{{else}}—{{end}}</td></tr>
 <tr><td>最後の通知</td><td>{{if $s.LastMessage}}{{date $s.LastMessageAt}}<br><span class="muted" style="white-space:pre-wrap">{{$s.LastMessage}}</span>{{else}}—{{end}}</td></tr>
 <tr><td>名前タグ OCR</td><td>{{$s.OCR}}</td></tr>
 <tr><td>学習済みテンプレート</td><td>画面 {{index $s.Templates "screen"}} · キャラ {{index $s.Templates "char"}} · 順位 {{index $s.Templates "rank"}}（1〜8 は組み込み）· 名前 {{index $s.Templates "name"}}</td></tr>

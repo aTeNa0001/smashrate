@@ -71,8 +71,19 @@ type VisionConfig struct {
 	Width  int     `toml:"width"`
 	Height int     `toml:"height"`
 	FPS    float64 `toml:"fps"`
-	// StableFrames is how many consecutive identical readings are required.
+	// StableFrames is the minimum number of frames a reading must have been
+	// seen in while the results screen was visible. 1 records even a screen
+	// that was skipped after a single frame.
 	StableFrames int `toml:"stable_frames"`
+	// SettleSeconds is how long readings are collected after the results
+	// screen first appears before the most frequent one is recorded (the
+	// panels animate in; the screen is recorded sooner if it disappears).
+	SettleSeconds float64 `toml:"settle_seconds"`
+	// IdleAfterSeconds: when the picture has not changed for this long (the
+	// Switch is off or asleep), ffmpeg is stopped to save CPU and heat, and
+	// the board is only probed every IdlePollSeconds. 0 disables idling.
+	IdleAfterSeconds int `toml:"idle_after_seconds"`
+	IdlePollSeconds  int `toml:"idle_poll_seconds"`
 	// CooldownSeconds suppresses duplicate recordings of the same screen.
 	CooldownSeconds int `toml:"cooldown_seconds"`
 	// Hamming-distance thresholds (0-64) for template matching.
@@ -147,7 +158,8 @@ func Default() Config {
 			FFmpeg: "ffmpeg", InputFormat: "dshow", Input: "video=USB Video",
 			// Full 1080p: hashes do not care about resolution, but the name-tag
 			// OCR misreads kana below ~30 px (360p renders them at 12 px).
-			Width: 1920, Height: 1080, FPS: 4, StableFrames: 2, CooldownSeconds: 90,
+			Width: 1920, Height: 1080, FPS: 6, StableFrames: 1, SettleSeconds: 1.5, CooldownSeconds: 90,
+			IdleAfterSeconds: 300, IdlePollSeconds: 30,
 			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 6, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
