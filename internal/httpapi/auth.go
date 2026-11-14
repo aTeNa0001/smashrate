@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aTeNa0001/smashrate/internal/config"
@@ -21,11 +23,81 @@ const sessionCookie = "smashrate_session"
 type auth struct {
 	cfg    config.AuthConfig
 	secret []byte
+	limit  loginLimiter
 }
 
 func newAuth(cfg config.AuthConfig) *auth {
 	sum := sha256.Sum256([]byte("smashrate-session:" + cfg.Password))
-	return &auth{cfg: cfg, secret: sum[:]}
+	return &auth{cfg: cfg, secret: sum[:], limit: loginLimiter{fails: map[string]*loginFails{}, now: time.Now}}
+}
+
+// A shared password invites guessing, so an address that gets it wrong
+// loginMaxFails times within loginWindow is locked out for loginBlock.
+const (
+	loginMaxFails = 5
+	loginWindow   = 10 * time.Minute
+	loginBlock    = 10 * time.Minute
+)
+
+type loginLimiter struct {
+	mu    sync.Mutex
+	fails map[string]*loginFails
+	now   func() time.Time
+}
+
+type loginFails struct {
+	n     int
+	first time.Time // start of the counting window
+	until time.Time // locked out until (zero = not locked)
+}
+
+// blocked reports whether addr is currently locked out.
+func (l *loginLimiter) blocked(addr string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	f := l.fails[addr]
+	return f != nil && l.now().Before(f.until)
+}
+
+// fail records a wrong password from addr and locks it out once it has
+// failed too often. Stale entries are dropped so the map cannot grow forever.
+func (l *loginLimiter) fail(addr string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	for a, f := range l.fails {
+		if now.Sub(f.first) > loginWindow && now.After(f.until) {
+			delete(l.fails, a)
+		}
+	}
+	f := l.fails[addr]
+	if f == nil || now.Sub(f.first) > loginWindow {
+		f = &loginFails{first: now}
+		l.fails[addr] = f
+	}
+	f.n++
+	if f.n >= loginMaxFails {
+		f.until = now.Add(loginBlock)
+	}
+}
+
+// ok clears addr after a successful login.
+func (l *loginLimiter) ok(addr string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.fails, addr)
+}
+
+// clientAddr is the visitor's address: the one Cloudflare saw when the
+// request came through the tunnel, otherwise the TCP peer.
+func clientAddr(r *http.Request) string {
+	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
+		return ip
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func (a *auth) enabled() bool { return a.cfg.Enabled() }
@@ -124,11 +196,18 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := safeNext(r.FormValue("next"))
+	addr := clientAddr(r)
+	if s.auth.limit.blocked(addr) {
+		http.Redirect(w, r, "/login?error=locked&next="+url.QueryEscape(next), http.StatusSeeOther)
+		return
+	}
 	if !s.auth.enabled() || !s.auth.checkPassword(r.FormValue("password")) {
+		s.auth.limit.fail(addr)
 		time.Sleep(500 * time.Millisecond) // blunt brute-force slowdown
 		http.Redirect(w, r, "/login?error=1&next="+url.QueryEscape(next), http.StatusSeeOther)
 		return
 	}
+	s.auth.limit.ok(addr)
 	s.auth.setSession(w, r)
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }

@@ -233,11 +233,37 @@ func serve(cfg config.Config, c *core.Core) error {
 		<-ctx.Done()
 		hs.Close()
 	}()
-	log.Printf("web UI on http://localhost%s", cfg.Server.Addr)
-	if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	ln, err := listenRetry(ctx, cfg.Server.Addr, 20*time.Second)
+	if err != nil {
+		log.Printf("fatal: %v", err)
+		return err
+	}
+	log.Printf("web UI on http://%s", ln.Addr())
+	if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("fatal: %v", err)
 		return err
 	}
 	return nil
+}
+
+// listenRetry keeps trying to bind addr for up to wait. Right after
+// "schtasks /End; schtasks /Run" the previous process may still hold the
+// port for a moment, and the scheduled task does not restart the new one
+// if it gives up immediately.
+func listenRetry(ctx context.Context, addr string, wait time.Duration) (net.Listener, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil || time.Now().After(deadline) {
+			return ln, err
+		}
+		log.Printf("%v (retrying)", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 func record(c *core.Core, text string) error {
