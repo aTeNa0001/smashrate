@@ -108,7 +108,8 @@ resource "cloudflare_zero_trust_access_application" "ssh" {
   name             = "${var.tunnel_name} ssh"
   type             = "self_hosted"
   domain           = local.ssh_host
-  session_duration = "24h"
+  # the maintainer's `cloudflared access login` token lasts this long (Access max: 1 month)
+  session_duration = "730h"
   policies = [{
     id         = cloudflare_zero_trust_access_policy.admins.id
     precedence = 1
