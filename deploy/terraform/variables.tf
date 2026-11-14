@@ -38,9 +38,16 @@ variable "tunnel_name" {
   default = "smashrate"
 }
 
+variable "protect_web_with_access" {
+  description = "Put Cloudflare Access (e-mail One-time PIN, member_emails) in front of the web UI too. False = anyone can reach the web UI and the app's own login does the gating."
+  type        = bool
+  default     = false
+}
+
 variable "member_emails" {
-  description = "Who may open the web UI (a One-time PIN is e-mailed to these addresses)"
+  description = "Who may open the web UI when protect_web_with_access is true"
   type        = list(string)
+  default     = []
 }
 
 variable "admin_emails" {

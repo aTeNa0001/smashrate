@@ -3,6 +3,6 @@ cloudflare_api_token = "..."
 zone_name            = "example.com"
 web_subdomain        = "smashrate"
 ssh_subdomain        = "ssh"
-member_emails        = ["you@example.com", "friend@example.com"]
+# protect_web_with_access = true   # also gate the web UI by e-mail; then list them:`n# member_emails        = ["you@example.com", "friend@example.com"]
 admin_emails         = ["you@example.com"]
 # create_otp_idp = false   # when Zero Trust > Settings > Authentication already lists One-time PIN

@@ -76,6 +76,7 @@ resource "cloudflare_zero_trust_access_identity_provider" "otp" {
 }
 
 resource "cloudflare_zero_trust_access_policy" "members" {
+  count      = var.protect_web_with_access ? 1 : 0
   account_id = local.account_id
   name       = "${var.tunnel_name} members"
   decision   = "allow"
@@ -90,13 +91,14 @@ resource "cloudflare_zero_trust_access_policy" "admins" {
 }
 
 resource "cloudflare_zero_trust_access_application" "web" {
+  count            = var.protect_web_with_access ? 1 : 0
   account_id       = local.account_id
   name             = "${var.tunnel_name} web"
   type             = "self_hosted"
   domain           = local.web_host
   session_duration = var.session_duration
   policies = [{
-    id         = cloudflare_zero_trust_access_policy.members.id
+    id         = cloudflare_zero_trust_access_policy.members[0].id
     precedence = 1
   }]
 }
