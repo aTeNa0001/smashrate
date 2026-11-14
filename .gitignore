@@ -5,3 +5,6 @@
 *.db
 *.db-wal
 *.db-shm
+
+# Claude Code personal settings
+.claude/settings.local.json
