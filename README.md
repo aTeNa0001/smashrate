@@ -77,15 +77,29 @@ PowerShell で `cd C:/smashrate` してから（`\` が打てなければ `/` �
 
 設定を変えたあとは毎回 4 の 2 行（再起動と doctor）を実行する。
 
+### 公開（smashrate.toml の設定）
+
+`[server]` と `[server.auth]` をこうして再起動すると、閲覧にも共通パスワードが必要になる
+（Cloudflare 側の作り方は [docs/DEPLOY.md](docs/DEPLOY.md)）:
+
+```toml
+[server]
+addr = "127.0.0.1:8080"
+base_url = "https://smashrate.example.com"
+
+[server.auth]
+password = "配るパスワード"
+read_requires_login = true
+trust_cloudflare_access = false
+```
+
 ### よく使うコマンド
 
 管理者 PowerShell で `cd C:/smashrate` してから。
 
 ```powershell
-# 設定を変えたあとの再起動（smashrate.toml の変更はこれで反映）
+# 設定を変えたあとの再起動 + チェック（smashrate.toml を直したら毎回これ）
 schtasks /End /TN smashrate; schtasks /Run /TN smashrate
-
-# 前提条件・状態のチェック
 ./smashrate.exe doctor
 
 # 本体を最新にする（更新後は自動で再起動される）
