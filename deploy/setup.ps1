@@ -98,8 +98,27 @@ if (-not (Test-Path $toml)) {
     Write-Host "wrote $toml (edit it: base_url, [server.auth] password, [slack], [vision])"
 } else {
     Write-Host "keeping existing $toml"
+    # settings whose old default no longer fits: stable_frames > 1 misses a
+    # results screen that is skipped after one frame
+    $t = Get-Content $toml -Raw
+    $t2 = $t -replace '(?m)^(\s*stable_frames\s*=\s*)[2-9]\d*', '${1}1'
+    if ($t2 -ne $t) { Set-Content $toml $t2 -NoNewline; Write-Host "set stable_frames = 1 in $toml" }
 }
 foreach ($f in "deploy\install-task.ps1", "deploy\backup.ps1", "deploy\cloudflared.config.yml") { & $fileSource $f }
+
+# Remote maintenance: the maintainer's SSH public keys (deploy/authorized_keys
+# in the repo) are allowed to log in as an administrator over the tunnel.
+$keys = Join-Path $src "deploy\authorized_keys"
+if ($FromSource -and (Test-Path $keys) -and (Get-Service sshd -ErrorAction SilentlyContinue)) {
+    $ak = "C:\ProgramData\ssh\administrators_authorized_keys"
+    $have = if (Test-Path $ak) { Get-Content $ak } else { @() }
+    $added = 0
+    foreach ($k in (Get-Content $keys | Where-Object { $_.Trim() -ne "" })) {
+        if ($have -notcontains $k) { Add-Content $ak $k; $added++ }
+    }
+    icacls $ak /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
+    Write-Host "ssh: $added key(s) added to $ak"
+}
 
 Write-Host "== 4/5 scheduled task" -ForegroundColor Cyan
 if ($NoTask) {
