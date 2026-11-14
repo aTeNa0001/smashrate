@@ -143,7 +143,9 @@ schtasks /End /TN smashrate; ./smashrate.exe reset-matches --yes; schtasks /Run 
 `[server.auth]` にパスワードを設定すると、記録・編集・削除にログインが必要になります
 （閲覧も守るなら `read_requires_login = true`）。スクリプトからは `Authorization: Bearer <api_token>` で
 書き込めます。ポート開放なしで公開する手順と、Cloudflare Access でメンバーを絞る設定は
-[docs/DEPLOY.md](docs/DEPLOY.md) を参照。
+[docs/DEPLOY.md](docs/DEPLOY.md) を参照。Cloudflare 側（トンネル・DNS・Access）は
+[deploy/terraform](deploy/terraform) で `terraform apply` 一発、ミニPC側は
+`cloudflared service install <token>` の 1 行です。
 
 ## 開発者向け
 
@@ -165,6 +167,7 @@ internal/vision       ffmpeg 入力、dHash、リザルト画面検出、学習�
 internal/ocr          名前タグ OCR（Windows 標準 / 外部コマンド）と名前のあいまい一致
 docs/VISION.md        画像認識の方式比較、採用理由、調整手順
 docs/DEPLOY.md        ミニPC セットアップ、Cloudflare Tunnel + Access
+deploy/terraform      Cloudflare 側（トンネル・DNS・Access）の Terraform
 ```
 
 ### JSON API

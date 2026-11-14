@@ -50,7 +50,42 @@ trust_cloudflare_access = true    # Access でサインイン済みの人はロ�
 トンネル以外から届かないようにしてから有効にしてください（LAN から直接叩けるとヘッダを偽装できるため）。
 家の中からも `https://smash.example.com` で開けば同じ経路になります。
 
-## 2. cloudflared
+## 2. Cloudflare 側（Terraform で一括）
+
+トンネル・ingress・DNS・Access のアプリとポリシーをまとめて `deploy/terraform/` で作ります。
+メンバーの追加は tfvars のメール一覧に足して `terraform apply` するだけ。別のミニPCのトンネルも
+同じアカウントなので、同じ要領で管理に載せられます。
+
+手元の PC（Terraform が入っている方）で:
+
+1. Cloudflare ダッシュボード → My Profile → API Tokens → Create Token → Custom token。権限は
+   Account: `Cloudflare Tunnel: Edit`、`Access: Apps and Policies: Edit`、
+   `Access: Organizations, Identity Providers, and Groups: Edit`、Zone: `DNS: Edit`（対象ゾーンはそのドメイン）。
+2. `deploy/terraform/terraform.tfvars.example` を `terraform.tfvars` にコピーして埋める
+   （account_id はダッシュボード URL の `dash.cloudflare.com/<ここ>`、zone_id はドメインの Overview 右側）。
+   Zero Trust → Settings → Authentication に既に One-time PIN があれば `create_otp_idp = false`。
+3. 実行:
+
+   ```powershell
+   cd deploy\terraform
+   terraform init
+   terraform apply            # 9 リソース。yes で作成
+   terraform output -raw tunnel_token
+   ```
+
+4. 出てきたトークンをミニPCの管理者 PowerShell で:
+
+   ```powershell
+   cloudflared service install <tunnel_token>
+   Get-Service cloudflared     # Running
+   ```
+
+   ingress（どのホスト名をどのポートへ流すか）は Cloudflare 側に保存されるので、ミニPCに
+   `config.yml` は要りません。これで 3（Access）と 4b の DNS・Access 設定も済んでいます。
+
+手で作りたい場合だけ、以下 2b と 3 の手順を使ってください。
+
+### 2b. cloudflared（手動）
 
 既に別のミニPCで使っているアカウントをそのまま使います。トンネルはアカウント内に何本でも作れます。
 
@@ -69,7 +104,7 @@ cloudflared tunnel run smashrate             # 動作確認
 cloudflared service install                  # Windows サービスとして常駐
 ```
 
-## 3. Access でメンバー制限
+## 3. Access でメンバー制限（手動。Terraform を使ったなら済んでいる）
 
 Cloudflare ダッシュボード → Zero Trust → Access → Applications → Add an application → Self-hosted。
 
@@ -98,11 +133,12 @@ schtasks /Create /TN smashrate-backup /SC DAILY /ST 04:00 /TR "powershell -Execu
 ```powershell
 # ミニPC（管理者 PowerShell、1 回だけ）
 powershell -ExecutionPolicy Bypass -File C:\smashrate\src\deploy\enable-ssh.ps1
-# cloudflared の config.yml に ssh.smash.example.com → ssh://localhost:22 を追加（deploy/cloudflared.config.yml 参照）
+# 手動構成のときだけ: config.yml に ssh.smash.example.com → ssh://localhost:22 を追加（deploy/cloudflared.config.yml 参照）
 cloudflared tunnel route dns smashrate ssh.smash.example.com
 Restart-Service cloudflared
 ```
 
+Terraform 構成なら ssh ホストの DNS と Access（`admin_emails` だけ許可）は作成済み。手動なら
 Cloudflare ダッシュボードで Access アプリケーションを `ssh.smash.example.com` にも作る（自分のメールだけ許可）。
 手元の PC では cloudflared を入れて `~/.ssh/config` に:
 
