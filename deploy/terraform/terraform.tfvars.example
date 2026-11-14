@@ -1,7 +1,5 @@
 # Copy to terraform.tfvars (gitignored) and fill in.
 cloudflare_api_token = "..."
-account_id           = "..."
-zone_id              = "..."
 zone_name            = "example.com"
 web_subdomain        = "smashrate"
 ssh_subdomain        = "ssh"

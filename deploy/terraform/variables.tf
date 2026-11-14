@@ -5,13 +5,15 @@ variable "cloudflare_api_token" {
 }
 
 variable "account_id" {
-  description = "Cloudflare account id (dashboard URL: dash.cloudflare.com/<account_id>)"
+  description = "Cloudflare account id. Leave null to look it up from the zone."
   type        = string
+  default     = null
 }
 
 variable "zone_id" {
-  description = "Zone id of the domain (domain Overview page, right column)"
+  description = "Zone id of the domain. Leave null to look it up by zone_name."
   type        = string
+  default     = null
 }
 
 variable "zone_name" {
