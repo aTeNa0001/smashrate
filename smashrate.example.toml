@@ -57,7 +57,10 @@ cooldown_seconds = 90
 idle_after_seconds = 300
 idle_poll_seconds = 30
 # Hamming distance (0-64) allowed between a region hash and a learned template.
-screen_threshold = 10
+# The results screen must pass two: the first panel's stat labels (screen) and
+# the stat-row band across the frame (band, which tells the player count).
+screen_threshold = 6
+band_threshold = 14
 char_threshold = 12
 rank_threshold = 6    # placement numerals are matched by shape; digits 1-7 are built in
 name_threshold = 10

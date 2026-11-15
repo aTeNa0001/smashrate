@@ -102,5 +102,60 @@ func DHash(img image.Image, r image.Rectangle) uint64 {
 	return h
 }
 
+// WhiteHash marks which cells of a cols x rows grid over r contain
+// near-white pixels (text), one bit per cell, row-major from the top left.
+//
+// The results screen is recognised by its stat-row labels (全滅/撃墜/落下/
+// 自滅), white text drawn over a translucent panel with the fighter's
+// portrait behind it. A brightness dHash of that area changes with the
+// fighter, the capture format and the winner's enlarged panel (measured
+// 13-16 bits between two real screens), while the text itself sits in the
+// same cells every time: on the screenshots we have, this hash differs by
+// 0-2 bits between screens of the same player count and by 12 or more
+// between different ones (6 vs 7 players excepted, which the full-width
+// band told apart by 27).
+func WhiteHash(img image.Image, r image.Rectangle, cols, rows int) uint64 {
+	var h uint64
+	cw := float64(r.Dx()) / float64(cols)
+	ch := float64(r.Dy()) / float64(rows)
+	rgba, _ := img.(*image.RGBA)
+	for gy := 0; gy < rows; gy++ {
+		for gx := 0; gx < cols; gx++ {
+			x0, x1 := r.Min.X+int(float64(gx)*cw), r.Min.X+int(float64(gx+1)*cw)
+			y0, y1 := r.Min.Y+int(float64(gy)*ch), r.Min.Y+int(float64(gy+1)*ch)
+			if x1 <= x0 {
+				x1 = x0 + 1
+			}
+			if y1 <= y0 {
+				y1 = y0 + 1
+			}
+			sx, sy := (x1-x0+maxSamples-1)/maxSamples, (y1-y0+maxSamples-1)/maxSamples
+			n, white := 0, 0
+			for y := y0; y < y1; y += sy {
+				for x := x0; x < x1; x += sx {
+					var cr, cg, cb uint8
+					if rgba != nil {
+						i := rgba.PixOffset(x, y)
+						cr, cg, cb = rgba.Pix[i], rgba.Pix[i+1], rgba.Pix[i+2]
+					} else {
+						r16, g16, b16, _ := img.At(x, y).RGBA()
+						cr, cg, cb = uint8(r16>>8), uint8(g16>>8), uint8(b16>>8)
+					}
+					if cr > 200 && cg > 200 && cb > 200 {
+						white++
+					}
+					n++
+				}
+			}
+			h <<= 1
+			// more than 2% of the cell is white: text, not a stray highlight
+			if white*50 > n {
+				h |= 1
+			}
+		}
+	}
+	return h
+}
+
 // Hamming is the number of differing bits between two hashes (0..64).
 func Hamming(a, b uint64) int { return bits.OnesCount64(a ^ b) }

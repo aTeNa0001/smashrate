@@ -12,13 +12,35 @@ import (
 )
 
 // synthetic "results screen": each region is painted with a distinct
-// deterministic pattern so hashes are stable yet different per label.
+// deterministic pattern so hashes are stable yet different per label. The
+// noise never reaches white, so only paintText cells count as text.
 func paint(img *image.RGBA, r image.Rectangle, seed int64) {
 	rng := rand.New(rand.NewSource(seed))
 	for y := r.Min.Y; y < r.Max.Y; y++ {
 		for x := r.Min.X; x < r.Max.X; x++ {
-			v := uint8(rng.Intn(256))
+			v := uint8(rng.Intn(200))
 			img.Set(x, y, color.RGBA{v, v, v, 255})
+		}
+	}
+}
+
+// paintText fills a seed-dependent half of the 8x8 cells of r with white,
+// standing in for the white stat labels the screen detector looks for.
+func paintText(img *image.RGBA, r image.Rectangle, seed int64) {
+	rng := rand.New(rand.NewSource(seed))
+	cw, ch := float64(r.Dx())/8, float64(r.Dy())/8
+	for gy := 0; gy < 8; gy++ {
+		for gx := 0; gx < 8; gx++ {
+			if rng.Intn(2) == 0 {
+				continue
+			}
+			x0, x1 := r.Min.X+int(float64(gx)*cw), r.Min.X+int(float64(gx+1)*cw)
+			y0, y1 := r.Min.Y+int(float64(gy)*ch), r.Min.Y+int(float64(gy+1)*ch)
+			for y := y0; y < y1; y++ {
+				for x := x0; x < x1; x++ {
+					img.Set(x, y, color.RGBA{250, 250, 250, 255})
+				}
+			}
 		}
 	}
 }
@@ -72,7 +94,7 @@ func frameMode(cfg config.VisionConfig, players int, mode string, charSeeds, ran
 	if mode == "team" {
 		screenSeed += 500
 	}
-	paint(img, Rect(img.Bounds(), layout.Screen), screenSeed)
+	paintText(img, Rect(img.Bounds(), layout.Screen), screenSeed)
 	for i, s := range layout.Slots {
 		paint(img, Rect(img.Bounds(), s.Char), charSeeds[i])
 		paintGlyph(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])

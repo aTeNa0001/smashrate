@@ -86,8 +86,11 @@ type VisionConfig struct {
 	IdlePollSeconds  int `toml:"idle_poll_seconds"`
 	// CooldownSeconds suppresses duplicate recordings of the same screen.
 	CooldownSeconds int `toml:"cooldown_seconds"`
-	// Hamming-distance thresholds (0-64) for template matching.
+	// Hamming-distance thresholds (0-64) for template matching. The screen
+	// is matched on two hashes: the first panel's stat labels (screen) and
+	// the stat-row band across the frame (band); both must be within range.
 	ScreenThreshold int `toml:"screen_threshold"`
+	BandThreshold   int `toml:"band_threshold"`
 	CharThreshold   int `toml:"char_threshold"`
 	RankThreshold   int `toml:"rank_threshold"`
 	NameThreshold   int `toml:"name_threshold"`
@@ -122,7 +125,8 @@ type Slot struct {
 type Layout struct {
 	Players int    `toml:"players"`
 	Mode    string `toml:"mode"`   // "" (1on1 / free-for-all) or "team"
-	Screen  Region `toml:"screen"` // region that identifies "this is the results screen"
+	Screen  Region `toml:"screen"` // stat labels of the first panel: "this is the results screen"
+	Band    Region `toml:"band"`   // stat rows across the whole frame: "with this many panels"
 	Slots   []Slot `toml:"slots"`
 	// WinnerShiftY: the 1st-place panel is drawn slightly enlarged, which
 	// moves its caption and name tag down by this fraction of the frame.
@@ -160,7 +164,7 @@ func Default() Config {
 			// OCR misreads kana below ~30 px (360p renders them at 12 px).
 			Width: 1920, Height: 1080, FPS: 6, StableFrames: 1, SettleSeconds: 1.5, CooldownSeconds: 90,
 			IdleAfterSeconds: 300, IdlePollSeconds: 30,
-			ScreenThreshold: 10, CharThreshold: 12, RankThreshold: 6, NameThreshold: 10,
+			ScreenThreshold: 6, BandThreshold: 14, CharThreshold: 12, RankThreshold: 6, NameThreshold: 10,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
 		},
@@ -221,12 +225,15 @@ func defaultLayouts() []Layout {
 		}
 		// The screen is recognised by the stat-row labels (全滅/撃墜/落下/自滅)
 		// down the left edge of the first panel; they never change, the
-		// numbers next to them do.
+		// numbers next to them do. The band of stat rows across the whole
+		// frame then confirms the player count (its label columns repeat at
+		// the panel pitch).
 		screen := Region{X: ps.x0, Y: 0.56, W: ps.w * 0.3, H: 0.37}
+		band := Region{X: 0, Y: 0.56, W: 1, H: 0.37}
 		// Team battles use the same screen; teammates are told apart by
 		// sharing a placement, so no separate layout is needed. A layout with
 		// mode = "team" can still be configured if a build ever differs.
-		out = append(out, Layout{Players: n, Screen: screen, Slots: slots, WinnerShiftY: 0.03})
+		out = append(out, Layout{Players: n, Screen: screen, Band: band, Slots: slots, WinnerShiftY: 0.03})
 	}
 	return out
 }

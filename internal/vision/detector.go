@@ -15,10 +15,16 @@ import (
 
 // Template kinds stored in the database.
 const (
-	KindScreen = "screen" // label "results:<players>"
-	KindChar   = "char"   // label = character key
-	KindRank   = "rank"   // label = "1".."8"
-	KindName   = "name"   // label = player name (as shown on the name tag)
+	// KindScreen and KindBand together identify the results screen and the
+	// player count: the white-text hash of the first panel's stat labels
+	// and of the stat-row band across the whole frame (see WhiteHash).
+	// The kind names changed when the hash did, so templates learned with
+	// the old brightness hash are simply never loaded.
+	KindScreen = "screen-text" // label "results:<players>"
+	KindBand   = "band-text"   // label "results:<players>"
+	KindChar   = "char"        // label = character key
+	KindRank   = "rank"        // label = "1".."8"
+	KindName   = "name"        // label = player name (as shown on the name tag)
 )
 
 // PlaceholderLabel marks a learned name-tag hash that is not a person
@@ -86,7 +92,7 @@ func NewDetector(cfg config.VisionConfig, c *core.Core) (*Detector, error) {
 // Reload re-reads templates.
 func (d *Detector) Reload(c *core.Core) error {
 	d.templates = map[string][]core.Template{}
-	for _, kind := range []string{KindScreen, KindChar, KindRank, KindName} {
+	for _, kind := range []string{KindScreen, KindBand, KindChar, KindRank, KindName} {
 		ts, err := c.Templates(kind)
 		if err != nil {
 			return err
@@ -164,20 +170,42 @@ func (d *Detector) classify(kind string, h uint64, threshold int) (string, int, 
 // ScreenMatch is how close a frame came to one layout's results-screen
 // template, for diagnosing "not a results screen".
 type ScreenMatch struct {
-	Want string // the layout's screen label
-	Best string // nearest learned screen template ("" when none learned)
-	Dist int    // Hamming distance to it (65 when none)
+	Want     string // the layout's screen label
+	Best     string // nearest learned first-panel template ("" when none learned)
+	Dist     int    // Hamming distance to it (65 when none)
+	BandBest string // nearest learned band template
+	BandDist int
 }
 
-// ScreenMatches reports, for every layout, the nearest screen template.
-func (d *Detector) ScreenMatches(img image.Image) []ScreenMatch {
+// screenHashes are the two hashes that identify a layout's results screen.
+func screenHashes(img image.Image, layout config.Layout) (panel, band uint64) {
 	b := img.Bounds()
+	return WhiteHash(img, Rect(b, layout.Screen), 8, 8), WhiteHash(img, Rect(b, layout.Band), 32, 2)
+}
+
+// ScreenMatches reports, for every layout, the nearest screen templates.
+func (d *Detector) ScreenMatches(img image.Image) []ScreenMatch {
 	var out []ScreenMatch
 	for _, layout := range d.cfg.Layouts {
-		best, dist, _ := d.classify(KindScreen, DHash(img, Rect(b, layout.Screen)), 64)
-		out = append(out, ScreenMatch{Want: layout.ScreenLabel(), Best: best, Dist: dist})
+		ph, bh := screenHashes(img, layout)
+		best, dist, _ := d.classify(KindScreen, ph, 64)
+		bbest, bdist, _ := d.classify(KindBand, bh, 64)
+		out = append(out, ScreenMatch{Want: layout.ScreenLabel(), Best: best, Dist: dist, BandBest: bbest, BandDist: bdist})
 	}
 	return out
+}
+
+// isScreen reports whether img is layout's results screen: both the first
+// panel's labels and the full-width band must match a template learned for
+// this layout (the band is what tells 6 from 7 players).
+func (d *Detector) isScreen(img image.Image, layout config.Layout) bool {
+	want := layout.ScreenLabel()
+	ph, bh := screenHashes(img, layout)
+	if label, _, ok := d.classify(KindScreen, ph, d.cfg.ScreenThreshold); !ok || label != want {
+		return false
+	}
+	label, _, ok := d.classify(KindBand, bh, d.cfg.BandThreshold)
+	return ok && label == want
 }
 
 // Detect tries every layout and returns a reading when the frame looks like
@@ -185,10 +213,7 @@ func (d *Detector) ScreenMatches(img image.Image) []ScreenMatch {
 func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 	b := img.Bounds()
 	for _, layout := range d.cfg.Layouts {
-		want := layout.ScreenLabel()
-		h := DHash(img, Rect(b, layout.Screen))
-		label, _, ok := d.classify(KindScreen, h, d.cfg.ScreenThreshold)
-		if !ok || label != want {
+		if !d.isScreen(img, layout) {
 			continue
 		}
 		r := &Reading{Players: layout.Players, Team: layout.Mode == "team", Layout: layout}
@@ -255,7 +280,7 @@ func NormalizeLabel(kind, label string) (string, error) {
 			return "", fmt.Errorf("rank must be 1-8, got %q", label)
 		}
 		return strconv.Itoa(n), nil
-	case KindScreen:
+	case KindScreen, KindBand:
 		l := strings.ToLower(label)
 		if strings.HasPrefix(l, "results:") {
 			return l, nil
@@ -281,7 +306,11 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 		return fmt.Errorf("no layout for %d players (mode %q)", players, mode)
 	}
 	b := img.Bounds()
-	if err := c.AddTemplate(KindScreen, layout.ScreenLabel(), DHash(img, Rect(b, layout.Screen))); err != nil {
+	ph, bh := screenHashes(img, layout)
+	if err := c.AddTemplate(KindScreen, layout.ScreenLabel(), ph); err != nil {
+		return err
+	}
+	if err := c.AddTemplate(KindBand, layout.ScreenLabel(), bh); err != nil {
 		return err
 	}
 	for i, slot := range layout.Slots {
