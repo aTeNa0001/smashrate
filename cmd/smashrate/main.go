@@ -588,7 +588,15 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		}
 		r, ok := det.Detect(img)
 		if !ok {
-			fmt.Println("not a results screen (no screen template within threshold)")
+			fmt.Printf("not a results screen (no screen template within threshold %d), image %dx%d\n", cfg.Vision.ScreenThreshold, img.Bounds().Dx(), img.Bounds().Dy())
+			for _, m := range det.ScreenMatches(img) {
+				if m.Best == "" {
+					fmt.Printf("  %-16s no screen template learned yet\n", m.Want)
+				} else {
+					fmt.Printf("  %-16s nearest template %-16s dist %2d\n", m.Want, m.Best, m.Dist)
+				}
+			}
+			fmt.Println("if this is a results screen: smashrate vision teach -image <this file> -players N")
 			return nil
 		}
 		kind := "1on1 / free-for-all"

@@ -161,6 +161,25 @@ func (d *Detector) classify(kind string, h uint64, threshold int) (string, int, 
 	return best, bestDist, best != "" && bestDist <= threshold
 }
 
+// ScreenMatch is how close a frame came to one layout's results-screen
+// template, for diagnosing "not a results screen".
+type ScreenMatch struct {
+	Want string // the layout's screen label
+	Best string // nearest learned screen template ("" when none learned)
+	Dist int    // Hamming distance to it (65 when none)
+}
+
+// ScreenMatches reports, for every layout, the nearest screen template.
+func (d *Detector) ScreenMatches(img image.Image) []ScreenMatch {
+	b := img.Bounds()
+	var out []ScreenMatch
+	for _, layout := range d.cfg.Layouts {
+		best, dist, _ := d.classify(KindScreen, DHash(img, Rect(b, layout.Screen)), 64)
+		out = append(out, ScreenMatch{Want: layout.ScreenLabel(), Best: best, Dist: dist})
+	}
+	return out
+}
+
 // Detect tries every layout and returns a reading when the frame looks like
 // a results screen. Unknown characters/ranks are left zero.
 func (d *Detector) Detect(img image.Image) (*Reading, bool) {

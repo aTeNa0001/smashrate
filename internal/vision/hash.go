@@ -42,11 +42,17 @@ func luma(c color.Color) float64 {
 	return 0.299*float64(r>>8) + 0.587*float64(g>>8) + 0.114*float64(b>>8)
 }
 
+// maxSamples caps how many pixels per axis a grid cell averages. A 9x8
+// grid of a 1080p frame does not get more accurate from reading all 28,800
+// pixels of each cell; at 10 fps that was the biggest CPU user on the mini PC.
+const maxSamples = 16
+
 // grayGrid box-filters the region down to cols x rows brightness cells.
 func grayGrid(img image.Image, r image.Rectangle, cols, rows int) []float64 {
 	out := make([]float64, cols*rows)
 	cw := float64(r.Dx()) / float64(cols)
 	ch := float64(r.Dy()) / float64(rows)
+	rgba, _ := img.(*image.RGBA)
 	for gy := 0; gy < rows; gy++ {
 		for gx := 0; gx < cols; gx++ {
 			x0 := r.Min.X + int(float64(gx)*cw)
@@ -59,11 +65,19 @@ func grayGrid(img image.Image, r image.Rectangle, cols, rows int) []float64 {
 			if y1 <= y0 {
 				y1 = y0 + 1
 			}
+			// sample at most maxSamples pixels per axis, evenly spread
+			sx, sy := (x1-x0+maxSamples-1)/maxSamples, (y1-y0+maxSamples-1)/maxSamples
 			var sum float64
 			n := 0
-			for y := y0; y < y1; y++ {
-				for x := x0; x < x1; x++ {
-					sum += luma(img.At(x, y))
+			for y := y0; y < y1; y += sy {
+				for x := x0; x < x1; x += sx {
+					if rgba != nil {
+						i := rgba.PixOffset(x, y)
+						p := rgba.Pix[i : i+3 : i+3]
+						sum += 0.299*float64(p[0]) + 0.587*float64(p[1]) + 0.114*float64(p[2])
+					} else {
+						sum += luma(img.At(x, y))
+					}
 					n++
 				}
 			}
