@@ -148,14 +148,16 @@ func doctor(cfgPath string, cfg config.Config, c *core.Core) error {
 		// A DirectShow device can be open in one process only. If serve is
 		// running it owns the device, so ask it for its latest frame instead
 		// of opening the device a second time.
-		snapURL := fmt.Sprintf("http://%s:%s/api/vision/snapshot", host, port)
-		if resp, err := (&http.Client{Timeout: 3 * time.Second}).Get(snapURL); err == nil {
+		cl, base := localClient(cfg)
+		if resp, err := cl.Get(base + "/api/vision/snapshot"); err == nil {
 			resp.Body.Close()
 			switch resp.StatusCode {
 			case 200:
 				add("OK", "フレーム取得", fmt.Sprintf("常駐プロセスが映像を受信中（設定 %dx%d）", cfg.Vision.Width, cfg.Vision.Height), "")
 			case 503:
 				add("FAIL", "フレーム取得", "常駐プロセスは起動しているが映像がまだ来ない", "Switch の電源とキャプチャボードの入力、USB 3.0 の挿し口を確認。タスクを再起動して再確認")
+			case 401, 303:
+				add("WARN", "フレーム取得", "常駐プロセスにログインできない（smashrate.toml のパスワードと起動中の設定が違う）", "schtasks /End /TN smashrate; schtasks /Run /TN smashrate")
 			default:
 				add("WARN", "フレーム取得", "常駐プロセスの設定では vision が無効（設定変更後に再起動していない）", "schtasks /End /TN smashrate; schtasks /Run /TN smashrate")
 			}

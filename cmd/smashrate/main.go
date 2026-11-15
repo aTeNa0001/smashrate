@@ -12,6 +12,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -246,6 +248,27 @@ func serve(cfg config.Config, c *core.Core) error {
 	return nil
 }
 
+// localClient talks to the running serve process on this machine. When the
+// web login is on it signs in with the configured password first, so the
+// CLI can use the API (doctor, vision snapshot) like a logged-in browser.
+func localClient(cfg config.Config) (*http.Client, string) {
+	host, port, _ := net.SplitHostPort(cfg.Server.Addr)
+	if host == "" {
+		host = "localhost"
+	}
+	base := fmt.Sprintf("http://%s:%s", host, port)
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Timeout: 3 * time.Second, Jar: jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if cfg.Server.Auth.Password != "" {
+		form := url.Values{"password": {cfg.Server.Auth.Password}, "next": {"/"}}
+		if resp, err := cl.PostForm(base+"/login", form); err == nil {
+			resp.Body.Close()
+		}
+	}
+	return cl, base
+}
+
 // listenRetry keeps trying to bind addr for up to wait. Right after
 // "schtasks /End; schtasks /Run" the previous process may still hold the
 // port for a moment, and the scheduled task does not restart the new one
@@ -434,11 +457,8 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		// Prefer the running server's current frame: the device stays open, so
 		// there is no re-handshake (capture boards show their logo for a second
 		// or two after being opened).
-		host, port, _ := net.SplitHostPort(cfg.Server.Addr)
-		if host == "" {
-			host = "localhost"
-		}
-		if resp, err := (&http.Client{Timeout: 3 * time.Second}).Get(fmt.Sprintf("http://%s:%s/api/vision/snapshot", host, port)); err == nil {
+		cl, base := localClient(cfg)
+		if resp, err := cl.Get(base + "/api/vision/snapshot"); err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode == 200 {
 				f, err := os.Create(path)
