@@ -13,6 +13,14 @@
 <p class="muted">約 2 秒ごとに更新。これがリザルト画面のときに自動記録が走ります。</p>
 <img id="live" src="/api/vision/snapshot" alt="キャプチャの最新フレーム" style="max-width:100%;border:1px solid var(--line);background:#000">
 <script>setInterval(function(){ var i=document.getElementById('live'); i.src='/api/vision/snapshot?t='+Date.now(); }, 2000);</script>
+{{if .Done}}<div class="err" style="border-color:var(--ok)">{{.Done}}</div>{{end}}
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+<form method="post" action="/learn/screen" class="row" style="margin-top:10px">
+  <span class="muted">上の映像がリザルト画面なのに検出されないとき:</span>
+  <label>人数 <select name="players"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+  <label class="checks"><input type="checkbox" name="team" value="1"> チーム戦</label>
+  <button type="submit">この画面をリザルト画面として学習</button>
+</form>
 
 <h2>監視の状態</h2>
 <div class="wrap"><table>

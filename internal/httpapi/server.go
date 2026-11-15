@@ -54,6 +54,7 @@ type Vision interface {
 	CropPath(id string) (string, bool)
 	Learn(id, label string) error
 	Discard(id string)
+	TeachScreen(players int, mode string) error
 }
 
 // New builds the handler.
@@ -123,7 +124,8 @@ func (s *Server) statusPage(w http.ResponseWriter, r *http.Request) {
 	if len(ms) > 0 {
 		last = &ms[0]
 	}
-	data := map[string]any{"HasWatcher": s.vision != nil, "Players": len(players), "LastMatch": last, "Version": s.version}
+	data := map[string]any{"HasWatcher": s.vision != nil, "Players": len(players), "LastMatch": last, "Version": s.version,
+		"Done": r.URL.Query().Get("done"), "Error": r.URL.Query().Get("error")}
 	if s.vision != nil {
 		data["Status"] = s.vision.Status()
 		data["Events"] = s.vision.Events()
@@ -177,6 +179,33 @@ func (s *Server) learnSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/learn?done="+url.QueryEscape(id+" → "+label), http.StatusSeeOther)
+}
+
+// learnScreen is the status page's "the picture on screen now is a results
+// screen for N players" button.
+func (s *Server) learnScreen(w http.ResponseWriter, r *http.Request) {
+	if s.vision == nil {
+		http.Error(w, "capture is disabled", 400)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	players, err := strconv.Atoi(r.FormValue("players"))
+	if err != nil || players < 2 || players > 8 {
+		http.Redirect(w, r, "/status?error="+url.QueryEscape("人数は 2〜8"), http.StatusSeeOther)
+		return
+	}
+	mode := ""
+	if r.FormValue("team") != "" {
+		mode = "team"
+	}
+	if err := s.vision.TeachScreen(players, mode); err != nil {
+		http.Redirect(w, r, "/status?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/status?done="+url.QueryEscape(fmt.Sprintf("%d 人のリザルト画面として学習した", players)), http.StatusSeeOther)
 }
 
 func (s *Server) cropImage(w http.ResponseWriter, r *http.Request) {
@@ -292,6 +321,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/status", s.apiStatus)
 	s.mux.HandleFunc("GET /learn", s.learnPage)
 	s.mux.HandleFunc("POST /learn", s.learnSubmit)
+	s.mux.HandleFunc("POST /learn/screen", s.learnScreen)
 	s.mux.HandleFunc("GET /api/vision/pending/{id}", s.cropImage)
 	s.mux.HandleFunc("GET /players", s.playersPage)
 	s.mux.HandleFunc("POST /players", s.playersSubmit)

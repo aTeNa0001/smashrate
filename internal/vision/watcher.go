@@ -768,3 +768,24 @@ func (w *Watcher) Learn(id, label string) error {
 
 // Reload refreshes templates (after `vision teach`).
 func (w *Watcher) Reload() error { return w.det.Reload(w.core) }
+
+// TeachScreen learns the frame on screen right now as the results screen
+// for the given player count (the web UI's "this is a results screen"
+// button), keeps a copy under data/screens and reloads the templates.
+func (w *Watcher) TeachScreen(players int, mode string) error {
+	img := w.LastFrame()
+	if img == nil {
+		return errors.New("まだ映像が来ていない")
+	}
+	if err := Teach(w.core, w.cfg, img, players, mode, nil, nil, nil); err != nil {
+		return err
+	}
+	dir := filepath.Join(w.dataDir, "screens")
+	_ = os.MkdirAll(dir, 0o755)
+	name := fmt.Sprintf("results-%d%s-%s.png", players, map[bool]string{true: "-team", false: ""}[mode == "team"], w.now().Format("20060102-150405"))
+	if err := SavePNG(filepath.Join(dir, name), img); err != nil {
+		log.Printf("vision: save screen: %v", err)
+	}
+	w.lastSeen = ""
+	return w.det.Reload(w.core)
+}
