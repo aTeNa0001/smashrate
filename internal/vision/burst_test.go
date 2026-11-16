@@ -95,6 +95,29 @@ func TestBurstPicksTheSettledReadingAndSettles(t *testing.T) {
 	}
 }
 
+// A screen that stays up long after settling is recorded exactly once,
+// even if its reading changes meanwhile (a name tag learned while it is
+// up changes the reading's key), and the status page reports the whole
+// time it was visible.
+func TestBurstRecordsALongScreenOnce(t *testing.T) {
+	c, w, f1, _ := setupBurst(t, 250*time.Millisecond)
+	other := frame(w.cfg, 2, []int64{11, 12}, []int64{22, 21}, 41, 42) // a different reading
+	for i := 0; i < 8; i++ {                                           // 2 s: settles and records after 1.5 s
+		w.Process(f1)
+	}
+	for i := 0; i < 8; i++ { // the reading changes while the screen is still up
+		w.Process(other)
+	}
+	w.Process(noise()) // gone
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("one appearance of the screen must give one match, got %d", len(ms))
+	}
+	if st := w.Status(); st.LastScreenFrames != 16 || st.LastScreenMs < 3500 {
+		t.Fatalf("status should cover the whole appearance: %+v", st)
+	}
+}
+
 func TestBurstHonoursStableFrames(t *testing.T) {
 	c, w, f1, msgs := setupBurst(t, 250*time.Millisecond)
 	w.cfg.StableFrames = 2

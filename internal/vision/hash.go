@@ -50,6 +50,11 @@ const maxSamples = 16
 // grayGrid box-filters the region down to cols x rows brightness cells.
 func grayGrid(img image.Image, r image.Rectangle, cols, rows int) []float64 {
 	out := make([]float64, cols*rows)
+	// a region outside the frame (a mistyped layout) must not index the
+	// pixel buffer out of range
+	if r = r.Intersect(img.Bounds()); r.Empty() {
+		return out
+	}
 	cw := float64(r.Dx()) / float64(cols)
 	ch := float64(r.Dy()) / float64(rows)
 	rgba, _ := img.(*image.RGBA)
@@ -116,6 +121,9 @@ func DHash(img image.Image, r image.Rectangle) uint64 {
 // band told apart by 27).
 func WhiteHash(img image.Image, r image.Rectangle, cols, rows int) uint64 {
 	var h uint64
+	if r = r.Intersect(img.Bounds()); r.Empty() {
+		return 0
+	}
 	cw := float64(r.Dx()) / float64(cols)
 	ch := float64(r.Dy()) / float64(rows)
 	rgba, _ := img.(*image.RGBA)

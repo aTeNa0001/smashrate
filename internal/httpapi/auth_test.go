@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/aTeNa0001/smashrate/internal/config"
 )
 
 func TestLoginLimiterLocksAnAddressAfterRepeatedFailures(t *testing.T) {
@@ -48,14 +50,24 @@ func TestLoginLimiterLocksAnAddressAfterRepeatedFailures(t *testing.T) {
 	}
 }
 
-func TestClientAddrPrefersCloudflareHeader(t *testing.T) {
+func TestClientAddrBelievesCloudflareOnlyFromLoopbackOrWhenTrusted(t *testing.T) {
+	a := newAuth(config.AuthConfig{Password: "pw"})
 	r := httptest.NewRequest(http.MethodPost, "/login", nil)
 	r.RemoteAddr = "127.0.0.1:5555"
-	if got := clientAddr(r); got != "127.0.0.1" {
+	if got := a.clientAddr(r); got != "127.0.0.1" {
 		t.Fatalf("peer: %q", got)
 	}
 	r.Header.Set("CF-Connecting-IP", "203.0.113.9")
-	if got := clientAddr(r); got != "203.0.113.9" {
-		t.Fatalf("cloudflare header: %q", got)
+	if got := a.clientAddr(r); got != "203.0.113.9" {
+		t.Fatalf("header from loopback (cloudflared): %q", got)
+	}
+	// a LAN client claiming a Cloudflare address is not believed
+	r.RemoteAddr = "192.168.1.20:5555"
+	if got := a.clientAddr(r); got != "192.168.1.20" {
+		t.Fatalf("header from the LAN: %q", got)
+	}
+	trusted := newAuth(config.AuthConfig{Password: "pw", TrustCloudflareAccess: true})
+	if got := trusted.clientAddr(r); got != "203.0.113.9" {
+		t.Fatalf("header when trusted by config: %q", got)
 	}
 }

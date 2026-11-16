@@ -431,17 +431,15 @@ func (c *Core) RecordMatch(in MatchInput) (*Match, error) {
 		return nil, err
 	}
 	if later == 0 {
-		if err := applyRatings(tx, matchID); err != nil {
-			return nil, err
-		}
+		err = applyRatings(tx, matchID)
+	} else {
+		err = recompute(tx)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
-	}
-	if later > 0 {
-		if err := c.Recompute(); err != nil {
-			return nil, err
-		}
 	}
 	return c.MatchByID(matchID)
 }
@@ -580,6 +578,15 @@ func (c *Core) Recompute() error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := recompute(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// recompute is Recompute inside a caller's transaction, so that a change
+// and its re-rating are committed together or not at all.
+func recompute(tx *sql.Tx) error {
 	if _, err := tx.Exec(`DELETE FROM rating_states`); err != nil {
 		return err
 	}
@@ -605,7 +612,7 @@ func (c *Core) Recompute() error {
 			return fmt.Errorf("match %d: %w", id, err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // ResetMatches deletes every match and rating while keeping players and

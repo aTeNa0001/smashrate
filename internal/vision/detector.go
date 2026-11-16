@@ -6,6 +6,7 @@ import (
 	_ "image/jpeg" // enable JPEG decoding for FileSource
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/aTeNa0001/smashrate/internal/characters"
 	"github.com/aTeNa0001/smashrate/internal/config"
@@ -77,9 +78,12 @@ func (r Reading) Complete() bool {
 	return len(r.Slots) > 0
 }
 
-// Detector matches frames against learned templates.
+// Detector matches frames against learned templates. Reload is called from
+// the web UI (learn page, teach button) while the capture goroutine is
+// detecting, so the template set is guarded by a lock.
 type Detector struct {
 	cfg       config.VisionConfig
+	mu        sync.RWMutex
 	templates map[string][]core.Template
 }
 
@@ -91,19 +95,26 @@ func NewDetector(cfg config.VisionConfig, c *core.Core) (*Detector, error) {
 
 // Reload re-reads templates.
 func (d *Detector) Reload(c *core.Core) error {
-	d.templates = map[string][]core.Template{}
+	ts := map[string][]core.Template{}
 	for _, kind := range []string{KindScreen, KindBand, KindChar, KindRank, KindName} {
-		ts, err := c.Templates(kind)
+		list, err := c.Templates(kind)
 		if err != nil {
 			return err
 		}
-		d.templates[kind] = ts
+		ts[kind] = list
 	}
+	d.mu.Lock()
+	d.templates = ts
+	d.mu.Unlock()
 	return nil
 }
 
 // TemplateCount returns how many templates of a kind are loaded.
-func (d *Detector) TemplateCount(kind string) int { return len(d.templates[kind]) }
+func (d *Detector) TemplateCount(kind string) int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return len(d.templates[kind])
+}
 
 // builtinRanks are placement-numeral signatures measured on a real 4-player
 // results screen (640x360 capture), so 1st and 2nd work before anything has
@@ -138,7 +149,10 @@ var builtinRanks = []core.Template{
 func (d *Detector) classifyRank(sig uint64) (string, int, bool) {
 	best, bestDist := "", 65
 	second := 65 // nearest template with a different label
-	for _, list := range [][]core.Template{d.templates[KindRank], builtinRanks} {
+	d.mu.RLock()
+	learned := d.templates[KindRank]
+	d.mu.RUnlock()
+	for _, list := range [][]core.Template{learned, builtinRanks} {
 		for _, t := range list {
 			dist := Hamming(t.Hash, sig)
 			switch {
@@ -159,6 +173,8 @@ func (d *Detector) classifyRank(sig uint64) (string, int, bool) {
 // classify returns the nearest template label within threshold.
 func (d *Detector) classify(kind string, h uint64, threshold int) (string, int, bool) {
 	best, bestDist := "", 65
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	for _, t := range d.templates[kind] {
 		if dist := Hamming(t.Hash, h); dist < bestDist {
 			best, bestDist = t.Label, dist

@@ -101,7 +101,7 @@ if (-not (Test-Path $toml)) {
     # settings whose old default no longer fits: stable_frames > 1 misses a
     # results screen that is skipped after one frame
     $t = Get-Content $toml -Raw
-    $t2 = $t -replace '(?m)^(\s*stable_frames\s*=\s*)[2-9]\d*', '${1}1'
+    $t2 = $t -replace '(?m)^(\s*stable_frames\s*=\s*)([2-9]|[1-9]\d+)\b', '${1}1'
     if ($t2 -ne $t) { Set-Content $toml $t2 -NoNewline; Write-Host "set stable_frames = 1 in $toml" }
 }
 foreach ($f in "deploy\install-task.ps1", "deploy\backup.ps1", "deploy\cloudflared.config.yml") { & $fileSource $f }

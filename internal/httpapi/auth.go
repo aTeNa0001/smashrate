@@ -88,16 +88,24 @@ func (l *loginLimiter) ok(addr string) {
 	delete(l.fails, addr)
 }
 
-// clientAddr is the visitor's address: the one Cloudflare saw when the
-// request came through the tunnel, otherwise the TCP peer.
-func clientAddr(r *http.Request) string {
+// clientAddr is the visitor's address for the login limiter: the TCP peer,
+// or the address Cloudflare reports when the request came through the
+// tunnel. The header is only believed when the peer is cloudflared on this
+// machine (loopback) or Cloudflare headers are trusted by configuration;
+// otherwise anyone reaching the port could dodge the lockout, or lock out
+// someone else, by setting it.
+func (a *auth) clientAddr(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
 	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-		return ip
+		peer := net.ParseIP(host)
+		if a.cfg.TrustCloudflareAccess || (peer != nil && peer.IsLoopback()) {
+			return ip
+		}
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
+	return host
 }
 
 func (a *auth) enabled() bool { return a.cfg.Enabled() }
@@ -196,7 +204,7 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := safeNext(r.FormValue("next"))
-	addr := clientAddr(r)
+	addr := s.auth.clientAddr(r)
 	if s.auth.limit.blocked(addr) {
 		http.Redirect(w, r, "/login?error=locked&next="+url.QueryEscape(next), http.StatusSeeOther)
 		return

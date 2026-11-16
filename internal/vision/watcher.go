@@ -59,6 +59,11 @@ type burst struct {
 	frames      int
 	readings    map[string]*burstEntry
 	order       []string
+	// recorded: the screen has already been recorded during this
+	// appearance (after SettleSeconds); readings keep being counted for
+	// the status page but nothing more is recorded until the screen goes
+	// away and comes back.
+	recorded bool
 }
 
 type burstEntry struct {
@@ -67,6 +72,10 @@ type burstEntry struct {
 	count   int
 	last    time.Time
 }
+
+// changedBits is how many bits of the whole-frame dHash must differ for the
+// picture to count as changed, both for entering idle and for leaving it.
+const changedBits = 6
 
 // errIdle is returned by runUntilIdle when the picture stopped changing.
 var errIdle = errors.New("picture unchanged")
@@ -383,23 +392,30 @@ func (w *Watcher) idle(ctx context.Context, open func() (FrameSource, error)) Fr
 			continue
 		}
 		// The board replays its logo for a couple of seconds after every
-		// open, so look at a few seconds of frames before deciding.
+		// open, so the decision is made on the last frame of a few-second
+		// window, not on the first frame that differs (the logo always does).
+		// Every probe frame still goes through detection, so a results
+		// screen that happens to be up during the probe is recorded too.
 		deadline := w.now().Add(4 * time.Second)
-		live := false
+		w.mu.Lock()
+		detections := w.stats.Detections
+		w.mu.Unlock()
+		live, got := false, false
 		for w.now().Before(deadline) && ctx.Err() == nil {
 			img, err := src.Next()
 			if err != nil {
 				break
 			}
-			w.mu.Lock()
-			w.lastFrame, w.stats.LastFrameAt = img, w.now()
-			w.mu.Unlock()
-			if Hamming(DHash(img, img.Bounds()), ref) > 10 {
-				live = true
-				break
-			}
+			got = true
+			w.Process(img)
+			// same threshold as the one that declared the picture static
+			live = Hamming(DHash(img, img.Bounds()), ref) > changedBits
 		}
-		if live {
+		w.Flush()
+		w.mu.Lock()
+		seenScreen := w.stats.Detections > detections
+		w.mu.Unlock()
+		if got && (live || seenScreen) {
 			log.Printf("vision: picture changed; capture resumed")
 			w.lastChange = w.now()
 			return src
@@ -426,7 +442,7 @@ func (w *Watcher) Process(img image.Image) {
 	w.stats.Frames++
 	w.stats.LastFrameAt = now
 	w.mu.Unlock()
-	if w.lastChange.IsZero() || Hamming(h, w.lastHash) > 6 {
+	if w.lastChange.IsZero() || Hamming(h, w.lastHash) > changedBits {
 		w.lastHash, w.lastChange = h, now
 	}
 	reading, ok := w.det.Detect(img)
@@ -458,19 +474,36 @@ func (w *Watcher) Process(img image.Image) {
 	if settle <= 0 {
 		settle = 1500 * time.Millisecond
 	}
-	if now.Sub(b.start) >= settle {
-		w.Flush()
+	if !b.recorded && now.Sub(b.start) >= settle {
+		// the panels have settled: record now rather than waiting for the
+		// screen to go away (which may take as long as the players like)
+		w.record(b)
+		b.recorded = true
 	}
 }
 
-// Flush records the current burst, if any: the reading seen most often
-// (the latest on a tie), provided it was seen at least StableFrames times.
+// Flush ends the current appearance of the results screen: the status page
+// gets how long it was visible, and it is recorded unless the settle
+// timer already did that. Exported for tests.
 func (w *Watcher) Flush() {
 	b := w.burst
 	if b == nil {
 		return
 	}
 	w.burst = nil
+	ms := int(b.last.Sub(b.start)/time.Millisecond) + int(1000/w.frameRate())
+	w.mu.Lock()
+	w.stats.LastScreenFrames, w.stats.LastScreenMs = b.frames, ms
+	w.mu.Unlock()
+	if !b.recorded {
+		w.record(b)
+	}
+}
+
+// record stores the burst's most frequent reading (the latest on a tie),
+// provided it was seen at least StableFrames times and the same screen was
+// not recorded a moment ago.
+func (w *Watcher) record(b *burst) {
 	var best *burstEntry
 	var bestKey string
 	for _, k := range b.order {
@@ -479,28 +512,33 @@ func (w *Watcher) Flush() {
 			best, bestKey = e, k
 		}
 	}
-	ms := int(b.last.Sub(b.start)/time.Millisecond) + int(1000/w.frameRate())
-	w.mu.Lock()
-	w.stats.LastScreenFrames, w.stats.LastScreenMs = b.frames, ms
-	w.mu.Unlock()
+	if best == nil {
+		return
+	}
 	need := w.cfg.StableFrames
 	if need <= 0 {
 		need = 1
 	}
 	if best.count < need {
+		ms := int(b.last.Sub(b.start)/time.Millisecond) + int(1000/w.frameRate())
 		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
 	now := w.now()
-	if now.Before(w.cooldown) && bestKey == w.lastSeen {
-		return
-	}
 	cd := time.Duration(w.cfg.CooldownSeconds) * time.Second
 	if cd <= 0 {
 		cd = 60 * time.Second
 	}
-	w.cooldown = now.Add(cd)
-	w.lastSeen = bestKey
+	w.mu.Lock()
+	suppressed := now.Before(w.cooldown) && bestKey == w.lastSeen
+	if !suppressed {
+		w.cooldown = now.Add(cd)
+		w.lastSeen = bestKey
+	}
+	w.mu.Unlock()
+	if suppressed {
+		return
+	}
 	w.handle(best.img, best.reading)
 }
 
@@ -762,8 +800,14 @@ func (w *Watcher) Learn(id, label string) error {
 	w.mu.Unlock()
 	_ = os.Remove(p.Path)
 	// a corrected reading should be recorded on the next identical screen
-	w.lastSeen = ""
+	w.forgetLastSeen()
 	return w.det.Reload(w.core)
+}
+
+func (w *Watcher) forgetLastSeen() {
+	w.mu.Lock()
+	w.lastSeen = ""
+	w.mu.Unlock()
 }
 
 // Reload refreshes templates (after `vision teach`).
@@ -786,6 +830,6 @@ func (w *Watcher) TeachScreen(players int, mode string) error {
 	if err := SavePNG(filepath.Join(dir, name), img); err != nil {
 		log.Printf("vision: save screen: %v", err)
 	}
-	w.lastSeen = ""
+	w.forgetLastSeen()
 	return w.det.Reload(w.core)
 }
