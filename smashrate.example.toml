@@ -38,7 +38,8 @@ ffmpeg = "ffmpeg"
 input_format = "dshow"
 input = "video=USB Video"
 # Extra input options, e.g. forcing the capture resolution:
-# input_args = ["-video_size", "1920x1080", "-framerate", "30"]
+# input_args = ["-pixel_format", "yuyv422", "-video_size", "1920x1080", "-framerate", "30"]
+# (yuyv422 is read without any colour conversion; mjpeg costs far more CPU)
 # Analysis resolution. Image matching works at any size; full 1080p is for
 # the name-tag OCR (kana are misread when smaller).
 width = 1920
@@ -46,8 +47,10 @@ height = 1080
 # The results screen can be very short (players skip it with a button). The
 # watcher collects readings while it is visible and records the most frequent
 # one as soon as it disappears, or after settle_seconds if it stays. A single
-# frame (1/6 s at fps = 6) is enough with stable_frames = 1.
-fps = 6
+# frame is enough with stable_frames = 1. Players who both mash OK can skip
+# the screen in a few tenths of a second, so capture at 30 fps; with the
+# board's native YUYV this costs about 16% of the mini PC's four cores.
+fps = 30
 stable_frames = 1
 settle_seconds = 1.5
 cooldown_seconds = 90

@@ -121,7 +121,7 @@ OS ごとのデバイス差（Windows dshow / Linux v4l2 / macOS avfoundation）
 解析は 1920×1080・6fps。画像照合は解像度に依存しないが、名前タグの OCR は 640×360 だと
 かな（12px）が潰れて「つゆだく」が「っゆだく」になるため 1080p にしている。CPU 負荷の大半は
 ffmpeg のデコード（デバイスの出力レート分）で、解析 fps を下げても減らない。減らすには
-待機モード（上記 10b）か、`input_args = ["-framerate", "10"]` のようにデバイスに低いレートを要求する
+待機モード（上記 10b）か、`input_args = ["-framerate", "10"]` のようにデバイスに低いレートを要求する（ただしリザルト画面は数百ミリ秒で飛ばされることがあるので、運用では 30 fps にしている）
 （対応していれば `ffmpeg -f dshow -list_options true -i video="<名前>"` に出る）。
 ミニPC上での確認は `smashrate vision test -image shot.png -ocr`（名前タグとキャプションの OCR 結果を表示）。
 
