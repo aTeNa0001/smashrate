@@ -180,7 +180,7 @@ func TestRunLoopIdlesAndResumes(t *testing.T) {
 	if !sources[0].closed || !sources[1].closed {
 		t.Fatal("idling must close ffmpeg")
 	}
-	if !errors.Is(context.Canceled, ctx.Err()) {
+	if !errors.Is(ctx.Err(), context.Canceled) {
 		t.Fatal("ctx")
 	}
 }

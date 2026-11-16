@@ -221,7 +221,9 @@ func serve(cfg config.Config, c *core.Core) error {
 		}
 		bot = slackbot.New(cfg.Slack, cfg.Server.BaseURL, c, learner)
 		go func() {
-			if err := bot.Run(ctx); err != nil && ctx.Err() == nil {
+			// Run only returns once the connection is gone; that is an error
+			// unless we are shutting down
+			if err := bot.Run(ctx); ctx.Err() == nil {
 				log.Printf("slack: %v", err)
 			}
 		}()

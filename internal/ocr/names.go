@@ -61,7 +61,8 @@ func IsPlaceholder(text string) bool {
 		return true
 	}
 	// strip a trailing player number
-	core := strings.TrimRight(n, "0123456789０-９-ー・")
+	// (a cutset lists characters, not ranges: every full-width digit is spelled out)
+	core := strings.TrimRight(n, "0123456789０１２３４５６７８９-ー・")
 	if core == "" {
 		return true
 	}

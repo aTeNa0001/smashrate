@@ -506,9 +506,7 @@ func (s *Server) balanceSubmit(w http.ResponseWriter, r *http.Request) {
 	k, _ := strconv.Atoi(r.FormValue("teams"))
 	uneven := r.FormValue("uneven") != ""
 	names := r.Form["members"]
-	for _, extra := range strings.FieldsFunc(r.FormValue("extra"), func(c rune) bool { return c == ',' || c == '\n' || c == ' ' || c == '　' }) {
-		names = append(names, extra)
-	}
+	names = append(names, strings.FieldsFunc(r.FormValue("extra"), func(c rune) bool { return c == ',' || c == '\n' || c == ' ' || c == '　' })...)
 	props, err := s.Balance(names, k, uneven)
 	players, _ := s.core.Players()
 	data := map[string]any{"Players": players, "Teams": k, "Uneven": uneven, "Selected": names, "Proposals": props}
