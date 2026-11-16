@@ -420,11 +420,28 @@ func (c *Core) RecordMatch(in MatchInput) (*Match, error) {
 			return nil, err
 		}
 	}
-	if err := applyRatings(tx, matchID); err != nil {
+	// Ratings are applied in match order (played_at). A match that is not
+	// the newest one (recorded with an earlier played_at, or the clock went
+	// back) must not be applied on top of later matches: replay everything
+	// instead, exactly as an edit or a deletion does, so that the ratings
+	// never depend on the order matches were typed in.
+	var later int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM matches WHERE deleted = 0 AND id <> ? AND played_at > ?`,
+		matchID, in.PlayedAt.UTC().Format(time.RFC3339)).Scan(&later); err != nil {
 		return nil, err
+	}
+	if later == 0 {
+		if err := applyRatings(tx, matchID); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	if later > 0 {
+		if err := c.Recompute(); err != nil {
+			return nil, err
+		}
 	}
 	return c.MatchByID(matchID)
 }
@@ -698,7 +715,7 @@ func (c *Core) UpdateEntryCharacter(matchID int64, player string, character stri
 
 // MatchByID loads one match with entries.
 func (c *Core) MatchByID(id int64) (*Match, error) {
-	ms, err := c.loadMatches(`WHERE m.id = ?`, id)
+	ms, err := c.loadMatches(`WHERE m.id = ? AND m.deleted = 0`, id)
 	if err != nil {
 		return nil, err
 	}

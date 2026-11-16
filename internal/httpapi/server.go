@@ -461,7 +461,8 @@ func (s *Server) matches(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	s.render(w, r, "matches", map[string]any{"Matches": ms, "Page": page, "Next": page + 1, "Prev": page - 1})
+	// "Page" is taken by render (the nav highlight), hence PageNo
+	s.render(w, r, "matches", map[string]any{"Matches": ms, "PageNo": page, "Next": page + 1, "Prev": page - 1})
 }
 
 func (s *Server) recordForm(w http.ResponseWriter, r *http.Request) {

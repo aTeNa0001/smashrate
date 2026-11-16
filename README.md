@@ -168,6 +168,17 @@ go build -o smashrate ./cmd/smashrate
 go test ./...
 ```
 
+テストは 4 段構えで、`go test ./...` で全部走ります（CI は push / PR / 毎週月曜に同じものを回す）。
+
+| 種類 | 場所 | 何を見るか |
+|---|---|---|
+| 単体 | 各パッケージの `*_test.go` | レート計算、チーム分け、パーサ、画面検出、認証 |
+| E2E | `e2e/` | 本物のバイナリをビルドして起動し、ログイン→フォームで記録→ランキング→編集→削除→改名→ログアウト→連続失敗ロックまで HTTP で通す。CLI の `record` も同じ DB に対して実行 |
+| モンキー | `internal/httpapi/monkey_test.go` | 全ルートに正常・異常・ゴミのリクエストを乱数で投げ続け、5xx ゼロ、ランキングの整列、試合数と勝敗の一致、再計算との一致を検証。`SMASHRATE_MONKEY_SEED=7 SMASHRATE_MONKEY_OPS=3000 go test ./internal/httpapi -run Monkey` で長く回せる |
+| ファズ | `FuzzMatch`（記法パーサ）, `FuzzRate`（レート計算）, `FuzzRecordMatch`（記録と再計算）, `FuzzNormalizeName`（OCR 後処理） | `go test -fuzz=FuzzRate -fuzztime=1m ./internal/rating` のように回す。CI は各 45 秒 |
+
+ほかに `go vet`、staticcheck、govulncheck（依存の既知脆弱性）、Windows ランナーでのテスト、race detector 付きのテストを CI で回しています。
+
 ```
 cmd/smashrate         CLI（serve / doctor / record / rank / balance / vision ...）
 internal/rating       OpenSkill Plackett–Luce（依存なし）

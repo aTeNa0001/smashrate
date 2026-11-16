@@ -3,7 +3,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 19 * * 1" # weekly, so the fuzzers keep digging even without commits
+
 jobs:
+  # unit tests, the in-process monkey test and the e2e run (real binary,
+  # real HTTP) on Linux with the race detector
   test:
     runs-on: ubuntu-latest
     steps:
@@ -11,7 +16,72 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: gofmt -l . && test -z "$(gofmt -l .)"
+      - run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
-      - run: go test -count=1 ./...
+      - run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+      - run: go tool cover -func=coverage.out | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
       - run: GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/smashrate
+
+  # the mini PC runs Windows: build and run the suite there too (the
+  # Windows OCR engine and file paths behave differently)
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 ./...
+
+  # a longer random walk over the whole web surface than the default test
+  monkey:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: 3000 random requests, three seeds
+        run: |
+          for seed in 1 7 42; do
+            SMASHRATE_MONKEY_SEED=$seed SMASHRATE_MONKEY_OPS=3000 go test -count=1 -run TestMonkey ./internal/httpapi || exit 1
+          done
+
+  # native Go fuzzing of the parsers, the rating maths and the store
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { pkg: ./internal/parse, name: FuzzMatch }
+          - { pkg: ./internal/rating, name: FuzzRate }
+          - { pkg: ./internal/core, name: FuzzRecordMatch }
+          - { pkg: ./internal/ocr, name: FuzzNormalizeName }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -run=^$ -fuzz=^${{ matrix.target.name }}$ -fuzztime=45s ${{ matrix.target.pkg }}
+      - name: keep any crasher the fuzzer found
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target.name }}
+          path: ${{ matrix.target.pkg }}/testdata/fuzz
+
+  # static analysis and known-vulnerability check of the dependencies
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
