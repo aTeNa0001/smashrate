@@ -116,7 +116,7 @@
 
 ## フレーム取得
 
-ffmpeg をサブプロセスとして起動し、`-f rawvideo -pix_fmt rgb24` で生の RGB を標準出力から読む。
+ffmpeg をサブプロセスとして起動し、`-f rawvideo -pix_fmt rgba` で生の RGBA を標準出力から読む（image.RGBA の Pix にそのまま入る）。
 OS ごとのデバイス差（Windows dshow / Linux v4l2 / macOS avfoundation）は ffmpeg が吸収する。
 解析は 1920×1080・6fps。画像照合は解像度に依存しないが、名前タグの OCR は 640×360 だと
 かな（12px）が潰れて「つゆだく」が「っゆだく」になるため 1080p にしている。CPU 負荷の大半は

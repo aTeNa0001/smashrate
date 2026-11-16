@@ -25,7 +25,6 @@ type FFmpegSource struct {
 	cmd    *exec.Cmd
 	out    io.ReadCloser
 	w, h   int
-	buf    []byte
 	cancel context.CancelFunc
 }
 
@@ -35,6 +34,7 @@ func OpenFFmpeg(cfg config.VisionConfig) (*FFmpegSource, error) {
 	if w <= 0 || h <= 0 {
 		w, h = 640, 360
 	}
+	w &^= 1 // yuyv packs two pixels per sample
 	fps := cfg.FPS
 	if fps <= 0 {
 		fps = 2
@@ -48,7 +48,7 @@ func OpenFFmpeg(cfg config.VisionConfig) (*FFmpegSource, error) {
 	args = append(args, cfg.InputArgs...)
 	args = append(args, "-i", cfg.Input,
 		"-vf", fmt.Sprintf("fps=%g,scale=%d:%d", fps, w, h),
-		"-f", "rawvideo", "-pix_fmt", "rgb24", "-")
+		"-f", "rawvideo", "-pix_fmt", "yuyv422", "-")
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, cfg.FFmpeg, args...)
 	cmd.Stderr = os.Stderr
@@ -61,17 +61,16 @@ func OpenFFmpeg(cfg config.VisionConfig) (*FFmpegSource, error) {
 		cancel()
 		return nil, fmt.Errorf("start ffmpeg: %w", err)
 	}
-	return &FFmpegSource{cmd: cmd, out: out, w: w, h: h, buf: make([]byte, w*h*3), cancel: cancel}, nil
+	return &FFmpegSource{cmd: cmd, out: out, w: w, h: h, cancel: cancel}, nil
 }
 
-// Next blocks for the next frame.
+// Next blocks for the next frame. ffmpeg passes the board's packed YUYV
+// through untouched (see YUYV); converting every pixel to RGB in ffmpeg
+// cost a whole core at 1080p30.
 func (s *FFmpegSource) Next() (image.Image, error) {
-	if _, err := io.ReadFull(s.out, s.buf); err != nil {
+	img := NewYUYV(s.w, s.h)
+	if _, err := io.ReadFull(s.out, img.Pix); err != nil {
 		return nil, err
-	}
-	img := image.NewRGBA(image.Rect(0, 0, s.w, s.h))
-	for i, j := 0, 0; i < len(s.buf); i, j = i+3, j+4 {
-		img.Pix[j], img.Pix[j+1], img.Pix[j+2], img.Pix[j+3] = s.buf[i], s.buf[i+1], s.buf[i+2], 255
 	}
 	return img, nil
 }
@@ -122,7 +121,7 @@ func SavePNG(path string, img image.Image) error {
 		return err
 	}
 	defer f.Close()
-	return png.Encode(f, img)
+	return png.Encode(f, toRGBA(img))
 }
 
 // Crop returns a copy of region r of img.
@@ -130,7 +129,9 @@ func Crop(img image.Image, r image.Rectangle) *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
 	for y := 0; y < r.Dy(); y++ {
 		for x := 0; x < r.Dx(); x++ {
-			out.Set(x, y, img.At(r.Min.X+x, r.Min.Y+y))
+			cr, cg, cb := rgbAt(img, r.Min.X+x, r.Min.Y+y)
+			i := out.PixOffset(x, y)
+			out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = cr, cg, cb, 255
 		}
 	}
 	return out

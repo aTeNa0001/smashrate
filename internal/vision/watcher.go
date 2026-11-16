@@ -186,11 +186,13 @@ func (w *Watcher) readChar(crop image.Image, hash uint64) string {
 	return ""
 }
 
-// LastFrame returns the most recent frame seen (nil before the first).
+// LastFrame returns the most recent frame seen (nil before the first) as an
+// RGBA image ready for PNG encoding.
 func (w *Watcher) LastFrame() image.Image {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.lastFrame
+	img := w.lastFrame
+	w.mu.Unlock()
+	return toRGBA(img) // outside the lock: a 1080p conversion takes ~10 ms
 }
 
 // Status is a snapshot of what the watcher has been doing, for /status.

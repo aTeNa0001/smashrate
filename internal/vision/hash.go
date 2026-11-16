@@ -12,7 +12,6 @@ package vision
 
 import (
 	"image"
-	"image/color"
 	"math"
 	"math/bits"
 
@@ -36,12 +35,6 @@ func Rect(bounds image.Rectangle, r config.Region) image.Rectangle {
 	return image.Rect(x0, y0, x0+pw, y0+ph).Intersect(bounds)
 }
 
-// luma returns the perceived brightness of a pixel.
-func luma(c color.Color) float64 {
-	r, g, b, _ := c.RGBA()
-	return 0.299*float64(r>>8) + 0.587*float64(g>>8) + 0.114*float64(b>>8)
-}
-
 // maxSamples caps how many pixels per axis a grid cell averages. A 9x8
 // grid of a 1080p frame does not get more accurate from reading all 28,800
 // pixels of each cell; at 10 fps that was the biggest CPU user on the mini PC.
@@ -57,7 +50,6 @@ func grayGrid(img image.Image, r image.Rectangle, cols, rows int) []float64 {
 	}
 	cw := float64(r.Dx()) / float64(cols)
 	ch := float64(r.Dy()) / float64(rows)
-	rgba, _ := img.(*image.RGBA)
 	for gy := 0; gy < rows; gy++ {
 		for gx := 0; gx < cols; gx++ {
 			x0 := r.Min.X + int(float64(gx)*cw)
@@ -76,13 +68,8 @@ func grayGrid(img image.Image, r image.Rectangle, cols, rows int) []float64 {
 			n := 0
 			for y := y0; y < y1; y += sy {
 				for x := x0; x < x1; x += sx {
-					if rgba != nil {
-						i := rgba.PixOffset(x, y)
-						p := rgba.Pix[i : i+3 : i+3]
-						sum += 0.299*float64(p[0]) + 0.587*float64(p[1]) + 0.114*float64(p[2])
-					} else {
-						sum += luma(img.At(x, y))
-					}
+					cr, cg, cb := rgbAt(img, x, y)
+					sum += 0.299*float64(cr) + 0.587*float64(cg) + 0.114*float64(cb)
 					n++
 				}
 			}
@@ -126,7 +113,6 @@ func WhiteHash(img image.Image, r image.Rectangle, cols, rows int) uint64 {
 	}
 	cw := float64(r.Dx()) / float64(cols)
 	ch := float64(r.Dy()) / float64(rows)
-	rgba, _ := img.(*image.RGBA)
 	for gy := 0; gy < rows; gy++ {
 		for gx := 0; gx < cols; gx++ {
 			x0, x1 := r.Min.X+int(float64(gx)*cw), r.Min.X+int(float64(gx+1)*cw)
@@ -141,14 +127,7 @@ func WhiteHash(img image.Image, r image.Rectangle, cols, rows int) uint64 {
 			n, white := 0, 0
 			for y := y0; y < y1; y += sy {
 				for x := x0; x < x1; x += sx {
-					var cr, cg, cb uint8
-					if rgba != nil {
-						i := rgba.PixOffset(x, y)
-						cr, cg, cb = rgba.Pix[i], rgba.Pix[i+1], rgba.Pix[i+2]
-					} else {
-						r16, g16, b16, _ := img.At(x, y).RGBA()
-						cr, cg, cb = uint8(r16>>8), uint8(g16>>8), uint8(b16>>8)
-					}
+					cr, cg, cb := rgbAt(img, x, y)
 					if cr > 200 && cg > 200 && cb > 200 {
 						white++
 					}
