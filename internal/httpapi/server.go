@@ -55,6 +55,10 @@ type Vision interface {
 	Learn(id, label string) error
 	Discard(id string)
 	TeachScreen(players int, mode string) error
+	// Reload re-reads the learned templates; the web UI calls it after a
+	// player is renamed or merged, which relabels their name-tag templates
+	// in the database but not in the running detector.
+	Reload() error
 }
 
 // New builds the handler.
@@ -254,6 +258,10 @@ func (s *Server) playersSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Redirect(w, r, "/players?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
+	}
+	if s.vision != nil {
+		// otherwise the next results screen would recreate the misread name
+		_ = s.vision.Reload()
 	}
 	http.Redirect(w, r, "/players?done="+url.QueryEscape(done), http.StatusSeeOther)
 }
