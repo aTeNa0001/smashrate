@@ -45,6 +45,14 @@ func noise() *image.RGBA {
 	return img
 }
 
+// gone feeds enough unrecognised frames (at the 250 ms test step) to end the
+// screen's appearance: one such frame is within goneGrace and ignored.
+func gone(w *Watcher) {
+	for i := 0; i < 3; i++ {
+		w.Process(noise())
+	}
+}
+
 func TestBurstRecordsAScreenShownForOneFrame(t *testing.T) {
 	c, w, f1, msgs := setupBurst(t, 250*time.Millisecond)
 	w.Process(noise())
@@ -52,7 +60,7 @@ func TestBurstRecordsAScreenShownForOneFrame(t *testing.T) {
 	if ms, _ := c.Matches(10, 0); len(ms) != 0 {
 		t.Fatal("nothing should be recorded while the screen may still be animating")
 	}
-	w.Process(noise()) // gone: record now
+	gone(w) // gone: record now
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 || ms[0].Entries[0].PlayerName != "Taro" {
 		t.Fatalf("expected the single-frame screen to be recorded: %+v msgs=%v", ms, *msgs)
@@ -65,7 +73,7 @@ func TestBurstRecordsAScreenShownForOneFrame(t *testing.T) {
 	// is not recorded twice
 	w.Process(f1)
 	w.Process(f1)
-	w.Process(noise())
+	gone(w)
 	if ms, _ := c.Matches(10, 0); len(ms) != 1 {
 		t.Fatalf("cooldown should suppress the repeat, got %d", len(ms))
 	}
@@ -108,7 +116,7 @@ func TestBurstRecordsALongScreenOnce(t *testing.T) {
 	for i := 0; i < 8; i++ { // the reading changes while the screen is still up
 		w.Process(other)
 	}
-	w.Process(noise()) // gone
+	gone(w)
 	ms, _ := c.Matches(10, 0)
 	if len(ms) != 1 {
 		t.Fatalf("one appearance of the screen must give one match, got %d", len(ms))
@@ -122,7 +130,7 @@ func TestBurstHonoursStableFrames(t *testing.T) {
 	c, w, f1, msgs := setupBurst(t, 250*time.Millisecond)
 	w.cfg.StableFrames = 2
 	w.Process(f1)
-	w.Process(noise())
+	gone(w)
 	if ms, _ := c.Matches(10, 0); len(ms) != 0 {
 		t.Fatal("one frame is below stable_frames = 2")
 	}
@@ -205,5 +213,44 @@ func TestRunLoopIdlesAndResumes(t *testing.T) {
 	}
 	if !errors.Is(ctx.Err(), context.Canceled) {
 		t.Fatal("ctx")
+	}
+}
+
+// One unrecognised frame in the middle of an appearance (a panel caught
+// mid-animation) must not split it into two matches, even when the reading
+// differs on either side of the gap: the live double record of 2026-11-18
+// was exactly that, with the fighter caption learned by OCR in between.
+func TestBurstSurvivesADroppedFrame(t *testing.T) {
+	c, w, f1, msgs := setupBurst(t, 250*time.Millisecond)
+	unknownChar := frame(w.cfg, 2, []int64{31, 12}, []int64{21, 22}, 41, 42) // same players and ranks, P1's caption unknown
+	w.Process(unknownChar)
+	w.Process(unknownChar)
+	w.Process(noise()) // one frame misses the thresholds
+	w.Process(f1)
+	w.Process(f1)
+	gone(w)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("a dropped frame split the appearance: %d matches, msgs=%v", len(ms), *msgs)
+	}
+	if st := w.Status(); st.LastScreenFrames != 4 {
+		t.Fatalf("the appearance should span the gap: %+v", st)
+	}
+	// a longer gap is a real disappearance; the same result shown again
+	// within the cooldown is still one match, and after the cooldown it is
+	// a new match
+	gone(w)
+	w.Process(f1)
+	gone(w)
+	if ms, _ := c.Matches(10, 0); len(ms) != 1 {
+		t.Fatalf("repeat within cooldown: %d", len(ms))
+	}
+	for i := 0; i < 61*4; i++ { // cooldown_seconds = 60 at 250 ms per frame
+		w.Process(noise())
+	}
+	w.Process(f1)
+	gone(w)
+	if ms, _ := c.Matches(10, 0); len(ms) != 2 {
+		t.Fatalf("after the cooldown the next game must be recorded: %d", len(ms))
 	}
 }

@@ -77,6 +77,14 @@ type burstEntry struct {
 // picture to count as changed, both for entering idle and for leaving it.
 const changedBits = 6
 
+// goneGrace is how long the results screen may fail to be recognised before
+// its appearance is considered over. A single frame that misses the
+// thresholds (a panel mid-animation, a dropped line from the board) used to
+// split one appearance into two bursts, and the second was recorded again
+// because the reading had changed meanwhile (a caption learned by OCR in
+// between).
+const goneGrace = 500 * time.Millisecond
+
 // errIdle is returned by runUntilIdle when the picture stopped changing.
 var errIdle = errors.New("picture unchanged")
 
@@ -449,8 +457,11 @@ func (w *Watcher) Process(img image.Image) {
 	}
 	reading, ok := w.det.Detect(img)
 	if !ok {
-		// the screen is gone: record what was collected
-		w.Flush()
+		// the screen is gone: record what was collected, unless it was seen
+		// a moment ago (one unrecognised frame does not end an appearance)
+		if b := w.burst; b == nil || now.Sub(b.last) >= goneGrace {
+			w.Flush()
+		}
 		return
 	}
 	w.mu.Lock()
@@ -507,11 +518,10 @@ func (w *Watcher) Flush() {
 // not recorded a moment ago.
 func (w *Watcher) record(b *burst) {
 	var best *burstEntry
-	var bestKey string
 	for _, k := range b.order {
 		e := b.readings[k]
 		if best == nil || e.count > best.count || (e.count == best.count && e.last.After(best.last)) {
-			best, bestKey = e, k
+			best = e
 		}
 	}
 	if best == nil {
@@ -526,22 +536,33 @@ func (w *Watcher) record(b *burst) {
 		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
+	w.handle(best.img, best.reading)
+}
+
+// repeat reports whether the same result (players and placements) was
+// recorded within CooldownSeconds, and otherwise remembers it. It is
+// checked on the resolved entries, not on the detector's raw reading: that
+// reading changes while the screen is up (a caption or tag learned by OCR
+// fills in), and two bursts of one screen must still count as one match.
+func (w *Watcher) repeat(in core.MatchInput) bool {
+	parts := make([]string, 0, len(in.Entries))
+	for _, e := range in.Entries {
+		parts = append(parts, fmt.Sprintf("%s=%d", e.Player, e.Rank))
+	}
+	sort.Strings(parts)
+	key := strings.Join(parts, ";")
 	now := w.now()
 	cd := time.Duration(w.cfg.CooldownSeconds) * time.Second
 	if cd <= 0 {
 		cd = 60 * time.Second
 	}
 	w.mu.Lock()
-	suppressed := now.Before(w.cooldown) && bestKey == w.lastSeen
-	if !suppressed {
-		w.cooldown = now.Add(cd)
-		w.lastSeen = bestKey
+	defer w.mu.Unlock()
+	if now.Before(w.cooldown) && key == w.lastSeen {
+		return true
 	}
-	w.mu.Unlock()
-	if suppressed {
-		return
-	}
-	w.handle(best.img, best.reading)
+	w.cooldown, w.lastSeen = now.Add(cd), key
+	return false
 }
 
 func (w *Watcher) frameRate() float64 {
@@ -652,6 +673,9 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		}
 	}
 	if len(unidentified) == 0 && complete {
+		if w.repeat(in) {
+			return // the same screen, recorded a moment ago
+		}
 		m, err := w.core.RecordMatch(in)
 		if err != nil {
 			msg = append(msg, "自動記録に失敗: "+err.Error())
