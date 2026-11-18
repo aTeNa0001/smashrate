@@ -5,6 +5,8 @@ import (
 	"errors"
 	"image"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -360,5 +362,30 @@ func TestVoteMergesIdentificationAcrossFrames(t *testing.T) {
 	}
 	if ms[0].Entries[0].PlayerName != "Taro" {
 		t.Fatalf("the name identified on another frame should be used: %+v", ms[0].Entries)
+	}
+}
+
+// A recorded match keeps the screen it was read from, full size and as a
+// thumbnail, and points at it.
+func TestRecordedMatchKeepsItsScreen(t *testing.T) {
+	c, w, f1, _ := setupBurst(t, 250*time.Millisecond)
+	w.Process(f1)
+	gone(w)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatal("no match")
+	}
+	if ms[0].Evidence != "evidence/1.jpg" {
+		t.Fatalf("evidence = %q", ms[0].Evidence)
+	}
+	for _, name := range []string{"1.jpg", "1_thumb.jpg"} {
+		st, err := os.Stat(filepath.Join(w.dataDir, "evidence", name))
+		if err != nil || st.Size() == 0 {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	th := Shrink(f1, 4)
+	if th.Bounds().Dx() != f1.Bounds().Dx()/4 {
+		t.Fatalf("thumbnail width %d", th.Bounds().Dx())
 	}
 }

@@ -184,7 +184,7 @@ func serve(cfg config.Config, c *core.Core) error {
 
 	var watcher *vision.Watcher
 	var bot *slackbot.Bot
-	opts := httpapi.Options{Auth: cfg.Server.Auth, Version: version}
+	opts := httpapi.Options{Auth: cfg.Server.Auth, Version: version, DataDir: cfg.Server.DataDir}
 	if cfg.Vision.Enabled {
 		// the watcher is created below; the web UI only ever sees it through
 		// this value, so build it first

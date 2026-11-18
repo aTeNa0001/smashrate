@@ -3,6 +3,7 @@
 <h1>対戦 #{{$m.ID}} の編集 <span class="muted" style="font-size:15px;font-weight:400">{{date $m.PlayedAt}} · {{modeName $m.Mode}} · {{$m.Source}}</span></h1>
 <p class="muted">プレイヤー・キャラ・チーム・順位を直すと、全員のレートが履歴から再計算されます。行を空にするとその参加者は外れます。</p>
 {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+{{if $m.Evidence}}<p><a href="/matches/{{$m.ID}}/evidence.jpg" target="_blank"><img src="/matches/{{$m.ID}}/evidence.jpg" alt="読み取ったリザルト画面" style="max-width:100%;height:auto;border:1px solid var(--line)"></a><br><span class="muted">自動記録の根拠: 読み取ったリザルト画面</span></p>{{end}}
 <form method="post" action="/matches/{{$m.ID}}/edit">
 <datalist id="players">{{range .Players}}<option value="{{.Name}}">{{end}}</datalist>
 <datalist id="chars">{{range .Characters}}<option value="{{.NameJA}}">{{.NameEN}}</option>{{end}}</datalist>

@@ -66,5 +66,18 @@
       {"port": 4, "name": "", "cpu": true, "char": "piranha_plant", "rank": 2},
       {"port": 5, "name": "", "cpu": true, "char": "link", "rank": 1}
     ]
+  },
+  {
+    "file": "results-6p-lucina-cpus.jpg",
+    "note": "first 6-player screen seen at 1080p (2026-11-18 19:40), one human (1P) and five CPUs, two CPUs tied 4th",
+    "players": 6,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "lucina", "rank": 1},
+      {"port": 2, "name": "", "cpu": true, "char": "samus", "rank": 3},
+      {"port": 3, "name": "", "cpu": true, "char": "kirby", "rank": 6},
+      {"port": 4, "name": "", "cpu": true, "char": "bowser", "rank": 4},
+      {"port": 5, "name": "", "cpu": true, "char": "ryu", "rank": 2},
+      {"port": 6, "name": "", "cpu": true, "char": "kazuya", "rank": 4}
+    ]
   }
 ]

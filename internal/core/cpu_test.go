@@ -61,3 +61,25 @@ func TestCPUMatchesAreKeptButNotRated(t *testing.T) {
 		t.Fatalf("matches: %+v", ms)
 	}
 }
+
+func TestSetEvidence(t *testing.T) {
+	c, _ := Open(":memory:")
+	defer c.Close()
+	m, err := c.RecordMatch(MatchInput{Entries: []EntryInput{{Player: "A", Team: 1, Rank: 1}, {Player: "B", Team: 2, Rank: 2}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Evidence != "" {
+		t.Fatal("a fresh match has no evidence")
+	}
+	if err := c.SetEvidence(m.ID, "evidence/1.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	m2, _ := c.MatchByID(m.ID)
+	if m2.Evidence != "evidence/1.jpg" {
+		t.Fatalf("evidence = %q", m2.Evidence)
+	}
+	if err := c.SetEvidence(999, "x"); err == nil {
+		t.Fatal("unknown match must be an error")
+	}
+}

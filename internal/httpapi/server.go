@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type Server struct {
 	auth    *auth
 	vision  Vision
 	version string
+	dataDir string
 }
 
 // Options configures the server.
@@ -43,6 +45,8 @@ type Options struct {
 	Vision Vision
 	// Version is shown on the status page.
 	Version string
+	// DataDir is where the watcher keeps evidence images; "" disables them.
+	DataDir string
 }
 
 // Vision is what the web UI needs from the capture watcher.
@@ -116,7 +120,7 @@ func New(c *core.Core, opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), vision: opt.Vision, version: opt.Version}
+	s := &Server{core: c, tpl: tpl, mux: http.NewServeMux(), auth: newAuth(opt.Auth), vision: opt.Vision, version: opt.Version, dataDir: opt.DataDir}
 	s.routes()
 	return s, nil
 }
@@ -312,6 +316,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /record", s.recordSubmit)
 	s.mux.HandleFunc("POST /matches/{id}/delete", s.deleteMatch)
 	s.mux.HandleFunc("GET /matches/{id}/edit", s.editForm)
+	s.mux.HandleFunc("GET /matches/{id}/evidence.jpg", s.evidence(""))
+	s.mux.HandleFunc("GET /matches/{id}/evidence-thumb.jpg", s.evidence("_thumb"))
 	s.mux.HandleFunc("POST /matches/{id}/edit", s.editSubmit)
 	s.mux.HandleFunc("GET /balance", s.balanceForm)
 	s.mux.HandleFunc("POST /balance", s.balanceSubmit)
@@ -706,4 +712,30 @@ func (s *Server) apiBalance(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiCharacters(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, characters.All)
+}
+
+// evidence serves the results screen a match was read from (suffix "" for
+// the full frame, "_thumb" for the history page's thumbnail). The file
+// name comes from the match row, never from the request, and must stay
+// under the data directory.
+func (s *Server) evidence(suffix string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		m, err := s.core.MatchByID(id)
+		if err != nil || m.Evidence == "" || s.dataDir == "" {
+			http.NotFound(w, r)
+			return
+		}
+		rel := filepath.FromSlash(m.Evidence)
+		if suffix != "" {
+			rel = strings.TrimSuffix(rel, ".jpg") + suffix + ".jpg"
+		}
+		path := filepath.Join(s.dataDir, rel)
+		if !strings.HasPrefix(path, filepath.Clean(s.dataDir)+string(filepath.Separator)) {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		http.ServeFile(w, r, path)
+	}
 }

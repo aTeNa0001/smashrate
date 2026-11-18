@@ -744,6 +744,7 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 		if err != nil {
 			msg = append(msg, "自動記録に失敗: "+err.Error())
 		} else {
+			w.keepEvidence(m.ID, img)
 			if m.Rated {
 				msg = append(msg, "自動記録しました "+describe(*m))
 			} else {

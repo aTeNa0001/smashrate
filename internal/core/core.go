@@ -62,6 +62,7 @@ func Open(path string) (*Core, error) {
 	for _, m := range []struct{ table, column, ddl string }{
 		{"matches", "rated", "ALTER TABLE matches ADD COLUMN rated INTEGER NOT NULL DEFAULT 1"},
 		{"entries", "cpu", "ALTER TABLE entries ADD COLUMN cpu INTEGER NOT NULL DEFAULT 0"},
+		{"matches", "evidence", "ALTER TABLE matches ADD COLUMN evidence TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := addColumn(db, m.table, m.column, m.ddl); err != nil {
 			db.Close()
@@ -359,6 +360,9 @@ type Match struct {
 	Source   string
 	Note     string
 	Rated    bool // false: a CPU took part; the match is kept but does not move ratings
+	// Evidence is the results screen the match was read from, as a path
+	// under the data directory ("" for a match typed in by hand).
+	Evidence string
 	Entries  []Entry
 }
 
@@ -810,7 +814,7 @@ func (c *Core) MatchesForPlayer(playerID int64, limit int) ([]Match, error) {
 }
 
 func (c *Core) loadMatches(where string, args ...any) ([]Match, error) {
-	rows, err := c.db.Query(`SELECT m.id, m.played_at, m.mode, m.source, m.note, m.rated FROM matches m `+where, args...)
+	rows, err := c.db.Query(`SELECT m.id, m.played_at, m.mode, m.source, m.note, m.rated, m.evidence FROM matches m `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +822,7 @@ func (c *Core) loadMatches(where string, args ...any) ([]Match, error) {
 	for rows.Next() {
 		var m Match
 		var played string
-		if err := rows.Scan(&m.ID, &played, &m.Mode, &m.Source, &m.Note, &m.Rated); err != nil {
+		if err := rows.Scan(&m.ID, &played, &m.Mode, &m.Source, &m.Note, &m.Rated, &m.Evidence); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -1229,6 +1233,19 @@ func insertEntries(tx *sql.Tx, matchID int64, entries []EntryInput) error {
 			matchID, p.ID, charKey, e.Team, e.Rank, e.Port, e.Stocks, e.CPU); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SetEvidence records where the results screen a match was read from is
+// kept (a path under the data directory).
+func (c *Core) SetEvidence(matchID int64, path string) error {
+	res, err := c.db.Exec(`UPDATE matches SET evidence = ? WHERE id = ?`, path, matchID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("match %d not found", matchID)
 	}
 	return nil
 }

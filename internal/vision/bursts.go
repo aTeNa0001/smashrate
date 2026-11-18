@@ -195,3 +195,67 @@ func (w *Watcher) ring(img image.Image, now time.Time) {
 		}
 	}
 }
+
+// keepEvidence stores the results screen a match was read from under
+// data/evidence/<match id>.jpg, with a quarter-size thumbnail for the
+// history page, and points the match at it. These are never pruned: they
+// are the match's proof.
+func (w *Watcher) keepEvidence(matchID int64, img image.Image) {
+	if w.dataDir == "" {
+		return
+	}
+	dir := filepath.Join(w.dataDir, "evidence")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("vision: evidence: %v", err)
+		return
+	}
+	name := fmt.Sprintf("%d.jpg", matchID)
+	full := toRGBA(img).(*image.RGBA)
+	if err := writeJPEG(filepath.Join(dir, name), full, 85); err != nil {
+		log.Printf("vision: evidence: %v", err)
+		return
+	}
+	if err := writeJPEG(filepath.Join(dir, fmt.Sprintf("%d_thumb.jpg", matchID)), Shrink(full, 4), 80); err != nil {
+		log.Printf("vision: evidence thumbnail: %v", err)
+	}
+	if err := w.core.SetEvidence(matchID, filepath.ToSlash(filepath.Join("evidence", name))); err != nil {
+		log.Printf("vision: evidence: %v", err)
+	}
+}
+
+func writeJPEG(path string, img image.Image, quality int) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return jpeg.Encode(f, img, &jpeg.Options{Quality: quality})
+}
+
+// Shrink box-filters img down by an integer factor.
+func Shrink(img *image.RGBA, factor int) *image.RGBA {
+	if factor < 1 {
+		factor = 1
+	}
+	b := img.Bounds()
+	w, h := b.Dx()/factor, b.Dy()/factor
+	out := image.NewRGBA(image.Rect(0, 0, w, h))
+	n := factor * factor
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			var r, g, bl int
+			for dy := 0; dy < factor; dy++ {
+				i := img.PixOffset(b.Min.X+x*factor, b.Min.Y+y*factor+dy)
+				for dx := 0; dx < factor; dx++ {
+					r += int(img.Pix[i])
+					g += int(img.Pix[i+1])
+					bl += int(img.Pix[i+2])
+					i += 4
+				}
+			}
+			o := out.PixOffset(x, y)
+			out.Pix[o], out.Pix[o+1], out.Pix[o+2], out.Pix[o+3] = uint8(r/n), uint8(g/n), uint8(bl/n), 255
+		}
+	}
+	return out
+}

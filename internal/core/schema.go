@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	note       TEXT NOT NULL DEFAULT '',
 	deleted    INTEGER NOT NULL DEFAULT 0,
 	rated      INTEGER NOT NULL DEFAULT 1, -- 0: a CPU took part; kept for the record, no rating
+	evidence   TEXT NOT NULL DEFAULT '',    -- the results screen it was read from (file under the data dir), '' if none
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_matches_played ON matches(played_at, id);
