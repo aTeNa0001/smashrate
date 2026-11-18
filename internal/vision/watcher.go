@@ -70,6 +70,10 @@ type burst struct {
 type burstEntry struct {
 	reading *Reading
 	img     image.Image
+	// samples are a few frames of this reading (the first and the latest
+	// two): a sparkle or a panel still animating on one frame must not
+	// decide what OCR reads from a tag seen for the first time
+	samples []image.Image
 	count   int
 	last    time.Time
 }
@@ -137,8 +141,8 @@ func (w *Watcher) learn(kind, label string, hash uint64) {
 // the player when the text matches nobody. The tag's hash is stored so the
 // next appearance is matched without OCR. placeholder is true for default
 // labels (プレイヤー1, コンピューター2, P1, CPU), which are remembered too.
-func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created, placeholder bool) {
-	if w.ocr == nil {
+func (w *Watcher) readTag(crops []image.Image, hash uint64) (name string, created, placeholder bool) {
+	if w.ocr == nil || len(crops) == 0 {
 		return "", false, false
 	}
 	players, _ := w.core.Players()
@@ -146,25 +150,30 @@ func (w *Watcher) readTag(crop image.Image, hash uint64) (name string, created, 
 	for _, p := range players {
 		names = append(names, p.Name)
 	}
-	// Try the smooth enlargement first (best for kana), then the isolated
-	// ink; the first reading that is a placeholder or matches a known
-	// player wins, otherwise the first non-empty reading becomes a new player.
+	// Every frame, smooth enlargement first (best for kana), then the
+	// isolated ink; the first reading that is a placeholder or matches a
+	// known player wins. Otherwise the longest reading becomes a new player:
+	// a sparkle crossing a glyph on one frame loses that glyph, never adds
+	// one.
 	first := ""
-	for _, v := range ocr.Variants(crop) {
-		clean := ocr.NormalizeName(w.recognize(v))
-		if clean == "" {
-			continue
-		}
-		if ocr.IsPlaceholder(clean) {
-			w.learn(KindName, PlaceholderLabel, hash)
-			return "", false, true
-		}
-		if m := ocr.MatchName(clean, names); m != "" {
-			w.learn(KindName, m, hash)
-			return m, false, false
-		}
-		if first == "" {
-			first = clean
+	for _, crop := range crops {
+		for _, v := range ocr.Variants(crop) {
+			clean := ocr.NormalizeName(w.recognize(v))
+			if clean == "" {
+				continue
+			}
+			if ocr.IsPlaceholder(clean) {
+				w.learn(KindName, PlaceholderLabel, hash)
+				return "", false, true
+			}
+			if m := ocr.MatchName(clean, names); m != "" {
+				w.learn(KindName, m, hash)
+				return m, false, false
+			}
+			if len([]rune(clean)) > len([]rune(first)) {
+				first = clean
+			}
+			break // one reading per frame is enough to compare lengths
 		}
 	}
 	if first == "" {
@@ -483,6 +492,11 @@ func (w *Watcher) Process(img image.Image) {
 		b.order = append(b.order, key)
 	}
 	e.reading, e.img, e.last = reading, img, now
+	if len(e.samples) < 3 {
+		e.samples = append(e.samples, img)
+	} else {
+		e.samples[1], e.samples[2] = e.samples[2], img
+	}
 	e.count++
 	settle := time.Duration(w.cfg.SettleSeconds * float64(time.Second))
 	if settle <= 0 {
@@ -537,7 +551,7 @@ func (w *Watcher) record(b *burst) {
 		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
-	w.handle(best.img, best.reading)
+	w.handle(best.img, best.samples, best.reading)
 }
 
 // repeat reports whether the same result (players and placements) was
@@ -573,7 +587,7 @@ func (w *Watcher) frameRate() float64 {
 	return 4
 }
 
-func (w *Watcher) handle(img image.Image, r *Reading) {
+func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 	w.keepFrame(img)
 	layout := r.Layout
 	var in core.MatchInput
@@ -593,7 +607,7 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		name, placeholder := s.Name, s.Placeholder
 		if name == "" && !placeholder {
 			var created bool
-			name, created, placeholder = w.readTag(Crop(img, nameRect), s.NameHash)
+			name, created, placeholder = w.readTag(tagCrops(img, samples, layout, i, s.Winner), s.NameHash)
 			if created {
 				newcomers = append(newcomers, name)
 			}
@@ -908,4 +922,24 @@ func (w *Watcher) keepFrame(img image.Image) {
 		_ = os.Remove(names[0])
 		names = names[1:]
 	}
+}
+
+// tagCrops cuts slot i's name tag out of the frame the reading was taken
+// from and out of the other sampled frames of the same screen, each with
+// the regions as they sit in that frame (the headers move while the screen
+// animates in). The reading's own frame comes first.
+func tagCrops(img image.Image, samples []image.Image, layout config.Layout, i int, winner bool) []image.Image {
+	out := []image.Image{}
+	seen := false
+	for _, f := range append([]image.Image{img}, samples...) {
+		if f == nil || (seen && f == img) {
+			continue
+		}
+		if f == img {
+			seen = true
+		}
+		_, name, _ := SlotRegions(f, layout, i, winner)
+		out = append(out, Crop(f, Rect(f.Bounds(), name)))
+	}
+	return out
 }

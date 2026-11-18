@@ -254,3 +254,52 @@ func TestBurstSurvivesADroppedFrame(t *testing.T) {
 		t.Fatalf("after the cooldown the next game must be recorded: %d", len(ms))
 	}
 }
+
+// perFrameOCR answers differently for each frame it is shown: the frame is
+// told apart by the brightness of its tag crop's first pixel.
+type perFrameOCR struct{ answers map[uint8]string }
+
+func (o *perFrameOCR) Name() string { return "per-frame" }
+func (o *perFrameOCR) Recognize(img image.Image) (string, error) {
+	if _, gray := img.(*image.Gray); gray {
+		return "", nil
+	}
+	r, _, _, _ := img.At(img.Bounds().Min.X+2, img.Bounds().Min.Y+2).RGBA()
+	return o.answers[uint8(r>>8)], nil
+}
+
+// A tag seen for the first time is OCRed on several frames of the screen
+// and the longest reading wins: a sparkle crossing a glyph on one frame
+// (the winner's panel glitters) must not register the player under a
+// truncated name.
+func TestUnknownTagIsReadOnSeveralFrames(t *testing.T) {
+	c, w, f1, msgs := setupBurst(t, 250*time.Millisecond)
+	// a screen with a tag nobody has learned: P1 is new, P2 is Hanako
+	fresh := func(shade uint8) *image.RGBA {
+		f := frame(w.cfg, 2, []int64{11, 12}, []int64{21, 22}, 77, 42)
+		r := Rect(f.Bounds(), w.cfg.Layouts[0].Slots[0].Name)
+		for y := r.Min.Y; y < r.Max.Y; y++ {
+			for x := r.Min.X; x < r.Max.X; x++ {
+				i := f.PixOffset(x, y)
+				if f.Pix[i] > 200 && f.Pix[i+1] > 200 && f.Pix[i+2] > 200 {
+					continue // keep the "text"
+				}
+				f.Pix[i], f.Pix[i+1], f.Pix[i+2] = shade, shade, shade
+			}
+		}
+		return f
+	}
+	_ = f1
+	a, b := fresh(40), fresh(90) // same tag, two frames: shade tells the fake engine which
+	w.SetOCR(&perFrameOCR{answers: map[uint8]string{40: "るか", 90: "はるか"}})
+	w.Process(a)
+	w.Process(b)
+	gone(w)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("expected the match, got %d; msgs=%v", len(ms), *msgs)
+	}
+	if ms[0].Entries[0].PlayerName != "はるか" {
+		t.Fatalf("the longest OCR reading across frames should name the player, got %q", ms[0].Entries[0].PlayerName)
+	}
+}
