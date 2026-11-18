@@ -66,10 +66,20 @@ func captionRows(img image.Image, slot config.Slot) (top, bottom float64, ok boo
 		// ask only that the rest of the row is black and white
 		return white >= 3 && (white+dark)*3 >= n*2
 	}
+	// The caption is the tallest run of text rows (runs are bridged across
+	// gaps of up to captionMaxGap, so two-line captions hold together).
+	// The first run is not enough: the sparkles that drift over the panel
+	// pass the row test and sit above the caption on some frames.
 	limit := b.Min.Y + h*40/100
-	first, last := -1, -1
-	gap := 0
 	maxGap := int(captionMaxGap * float64(h))
+	bestFirst, bestLast := -1, -1
+	first, last, gap := -1, -1, 0
+	close := func() {
+		if first >= 0 && (bestFirst < 0 || last-first > bestLast-bestFirst) {
+			bestFirst, bestLast = first, last
+		}
+		first, last, gap = -1, -1, 0
+	}
 	for y := b.Min.Y; y < limit; y++ {
 		if isText(y) {
 			if first < 0 {
@@ -81,14 +91,15 @@ func captionRows(img image.Image, slot config.Slot) (top, bottom float64, ok boo
 		if first >= 0 {
 			gap++
 			if gap > maxGap {
-				break
+				close()
 			}
 		}
 	}
-	if first < 0 || last-first < int(captionMinRows*float64(h)) {
+	close()
+	if bestFirst < 0 || bestLast-bestFirst < int(captionMinRows*float64(h)) {
 		return 0, 0, false
 	}
-	return float64(first-b.Min.Y) / float64(h), float64(last-b.Min.Y+1) / float64(h), true
+	return float64(bestFirst-b.Min.Y) / float64(h), float64(bestLast-b.Min.Y+1) / float64(h), true
 }
 
 // SlotRegions returns slot i's caption, name-tag and numeral regions as they

@@ -20,8 +20,35 @@
     ]
   },
   {
+    "file": "results-2p-marth-zelda-cpu-001.jpg", "sequence": "175640",
+    "note": "first frame of a 3-frame appearance (2026-11-18 17:56): sparkles cross the 1P tag, ZELDA caption still fading in",
+    "players": 2,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "marth", "rank": 2},
+      {"port": 2, "name": "", "cpu": true, "char": "zelda", "rank": 1}
+    ]
+  },
+  {
+    "file": "results-2p-marth-zelda-cpu-002.jpg", "sequence": "175640",
+    "players": 2,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "marth", "rank": 2},
+      {"port": 2, "name": "", "cpu": true, "char": "zelda", "rank": 1}
+    ]
+  },
+  {
+    "file": "results-2p-marth-zelda-cpu-003.jpg", "sequence": "175640",
+    "players": 2,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "marth", "rank": 2},
+      {"port": 2, "name": "", "cpu": true, "char": "zelda", "rank": 1}
+    ]
+  }
+,
+  {
     "file": "results-2p-skipped-marth-cpu.jpg",
-    "note": "skipped at once: headers still sliding in, sparkle on the winner's tag (2026-11-18 16:22)",
+    "note": "skipped at once: headers still sliding in, a sparkle touches the tag (2026-11-18 16:22). One frame of a 4-frame appearance: by hash alone this frame does not identify the tag; live, the other frames or OCR do",
+    "name_by_hash_optional": true,
     "players": 2,
     "slots": [
       {"port": 1, "name": "はるか", "char": "marth", "rank": 1},

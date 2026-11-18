@@ -17,9 +17,11 @@ import (
 // must be identified from a template learned on a different frame (and a
 // different layout) of the corpus.
 type corpusFrame struct {
-	File    string `json:"file"`
-	Players int    `json:"players"`
-	Slots   []struct {
+	File     string `json:"file"`
+	Sequence string `json:"sequence"`              // frames of one appearance share it: names and captions need only one of them
+	NameOpt  bool   `json:"name_by_hash_optional"` // a lone frame whose tag a sparkle spoils: the name need not be identified
+	Players  int    `json:"players"`
+	Slots    []struct {
 		Port int    `json:"port"`
 		Name string `json:"name"`
 		CPU  bool   `json:"cpu"`
@@ -77,6 +79,9 @@ func TestCorpusFramesAreReadCorrectly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// what was identified on at least one frame of each appearance
+	seqName := map[string]map[int]bool{}
+	seqChar := map[string]map[int]bool{}
 	for _, f := range frames {
 		img, _ := OpenFiles(filepath.Join("testdata", "corpus", f.File)).Next()
 		r, ok := det.Detect(img)
@@ -93,17 +98,26 @@ func TestCorpusFramesAreReadCorrectly(t *testing.T) {
 			if got.Rank != s.Rank {
 				t.Errorf("%s P%d: rank %d, want %d (dist %d)", f.File, s.Port, got.Rank, s.Rank, got.RankDist)
 			}
-			if got.Char != s.Char {
-				t.Errorf("%s P%d: char %q, want %q (dist %d)", f.File, s.Port, got.Char, s.Char, got.CharDist)
-			}
-			if s.Name != "" && got.Name != s.Name {
-				t.Errorf("%s P%d: name %q, want %q (dist %d)", f.File, s.Port, got.Name, s.Name, got.NameDist)
+			if f.Sequence != "" {
+				if seqName[f.Sequence] == nil {
+					seqName[f.Sequence], seqChar[f.Sequence] = map[int]bool{}, map[int]bool{}
+				}
+				seqName[f.Sequence][s.Port] = seqName[f.Sequence][s.Port] || got.Name == s.Name
+				seqChar[f.Sequence][s.Port] = seqChar[f.Sequence][s.Port] || got.Char == s.Char
+			} else {
+				if got.Char != s.Char {
+					t.Errorf("%s P%d: char %q, want %q (dist %d)", f.File, s.Port, got.Char, s.Char, got.CharDist)
+				}
+				if s.Name != "" && got.Name != s.Name && !f.NameOpt {
+					t.Errorf("%s P%d: name %q, want %q (dist %d)", f.File, s.Port, got.Name, s.Name, got.NameDist)
+				}
 			}
 			if s.CPU && got.Name != "" {
 				t.Errorf("%s P%d: a CPU tag was identified as %q", f.File, s.Port, got.Name)
 			}
 		}
 	}
+	checkSequences(t, frames, seqName, seqChar)
 }
 
 func itoa(n int) string {
@@ -111,4 +125,23 @@ func itoa(n int) string {
 		return ""
 	}
 	return string(rune('0' + n))
+}
+
+func init() { _ = checkSequences }
+
+// checkSequences is called at the end of TestCorpusFramesAreReadCorrectly.
+func checkSequences(t *testing.T, frames []corpusFrame, seqName, seqChar map[string]map[int]bool) {
+	for _, f := range frames {
+		if f.Sequence == "" {
+			continue
+		}
+		for _, s := range f.Slots {
+			if s.Name != "" && !seqName[f.Sequence][s.Port] {
+				t.Errorf("appearance %s P%d: %q identified on none of its frames", f.Sequence, s.Port, s.Name)
+			}
+			if s.Char != "" && !seqChar[f.Sequence][s.Port] {
+				t.Errorf("appearance %s P%d: caption %q read on none of its frames", f.Sequence, s.Port, s.Char)
+			}
+		}
+	}
 }

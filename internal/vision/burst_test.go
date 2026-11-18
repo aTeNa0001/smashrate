@@ -343,3 +343,22 @@ func TestCPUColumnIsRecordedUnrated(t *testing.T) {
 		t.Fatalf("entries: %+v", m.Entries)
 	}
 }
+
+// Frames of one screen that differ only in what was identified (a tag a
+// sparkle crossed on some frames) must not split the vote: the recorded
+// match carries the name from the frames that identified it.
+func TestVoteMergesIdentificationAcrossFrames(t *testing.T) {
+	c, w, f1, msgs := setupBurst(t, 250*time.Millisecond)
+	unknownTag := frame(w.cfg, 2, []int64{11, 12}, []int64{21, 22}, 99, 42) // P1's tag unreadable, same placements
+	w.Process(unknownTag)
+	w.Process(f1)
+	w.Process(unknownTag) // the unidentified reading is seen last and as often
+	gone(w)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("expected the match, got %d; msgs=%v", len(ms), *msgs)
+	}
+	if ms[0].Entries[0].PlayerName != "Taro" {
+		t.Fatalf("the name identified on another frame should be used: %+v", ms[0].Entries)
+	}
+}

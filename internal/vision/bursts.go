@@ -126,8 +126,8 @@ func Replay(det *Detector, dir string) (*ReplayResult, error) {
 		return nil, err
 	}
 	res := &ReplayResult{Readings: map[string]int{}}
-	var best *Reading
-	bestN := 0
+	b := &burst{readings: map[string]*burstEntry{}}
+	var best *burstEntry
 	for _, name := range names {
 		img, err := OpenFiles(name).Next()
 		if err != nil {
@@ -141,10 +141,20 @@ func Replay(det *Detector, dir string) (*ReplayResult, error) {
 		}
 		k := r.Key()
 		res.Readings[k]++
-		if res.Readings[k] >= bestN { // the latest on a tie, as the watcher does
-			best, bestN = r, res.Readings[k]
+		e := b.readings[k]
+		if e == nil {
+			e = &burstEntry{reading: r}
+			b.readings[k] = e
+			b.order = append(b.order, k)
+		}
+		e.count++
+		e.last = time.Now()
+		if best == nil || e.count >= best.count { // the latest on a tie, as the watcher does
+			best = e
 		}
 	}
-	res.Best = best
+	if best != nil {
+		res.Best = mergeReadings(b, best.reading)
+	}
 	return res, nil
 }

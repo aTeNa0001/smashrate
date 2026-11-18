@@ -144,9 +144,17 @@ func (w *Watcher) learn(kind, label string, hash uint64) {
 // the player when the text matches nobody. The tag's hash is stored so the
 // next appearance is matched without OCR. placeholder is true for default
 // labels (プレイヤー1, コンピューター2, P1, CPU), which are remembered too.
-func (w *Watcher) readTag(crops []image.Image, hash uint64) (name string, created, placeholder bool) {
+func (w *Watcher) readTag(crops []image.Image, hashes []uint64) (name string, created, placeholder bool) {
 	if w.ocr == nil || len(crops) == 0 {
 		return "", false, false
+	}
+	hash := hashes[0]
+	// remember the tag as it looked on every sampled frame: the panel's
+	// sparkles cross the text on some frames and shift its hash
+	learnAll := func(label string) {
+		for _, h := range hashes {
+			w.learn(KindName, label, h)
+		}
 	}
 	players, _ := w.core.Players()
 	names := make([]string, 0, len(players))
@@ -166,11 +174,11 @@ func (w *Watcher) readTag(crops []image.Image, hash uint64) (name string, create
 				continue
 			}
 			if ocr.IsPlaceholder(clean) {
-				w.learn(KindName, PlaceholderLabel, hash)
+				learnAll(PlaceholderLabel)
 				return "", false, true
 			}
 			if m := ocr.MatchName(clean, names); m != "" {
-				w.learn(KindName, m, hash)
+				learnAll(m)
 				return m, false, false
 			}
 			if len([]rune(clean)) > len([]rune(first)) {
@@ -187,7 +195,8 @@ func (w *Watcher) readTag(crops []image.Image, hash uint64) (name string, create
 		log.Printf("vision: create player %q: %v", first, err)
 		return "", false, false
 	}
-	w.learn(KindName, p.Name, hash)
+	learnAll(p.Name)
+	_ = hash
 	return p.Name, true, false
 }
 
@@ -558,7 +567,7 @@ func (w *Watcher) record(b *burst) {
 		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
-	w.handle(best.img, best.samples, best.reading)
+	w.handle(best.img, best.samples, mergeReadings(b, best.reading))
 	w.mu.Lock()
 	last := w.stats.LastMessage
 	w.mu.Unlock()
@@ -616,9 +625,26 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 		// The name tag identifies the human: learned hash first, OCR for a
 		// tag never seen before, manual labelling as the last resort.
 		name, placeholder := s.Name, s.Placeholder
+		frames := sampleFrames(img, samples)
+		tagCrops := tagCropsOf(frames, layout, i, s.Winner)
+		// the tag as it is on every sampled frame at once (sparkles drop
+		// out), then as it looks on each frame on its own
+		hashes := append([]uint64{TagHashFrames(tagCrops)}, tagHashes(frames, layout, i, s.Winner)...)
+		if name == "" && !placeholder {
+			for _, h := range hashes {
+				if lbl, _, ok := w.det.classify(KindName, h, w.cfg.NameThreshold); ok {
+					if strings.HasPrefix(lbl, "#") {
+						placeholder = true
+					} else {
+						name = lbl
+					}
+					break
+				}
+			}
+		}
 		if name == "" && !placeholder {
 			var created bool
-			name, created, placeholder = w.readTag(tagCrops(img, samples, layout, i, s.Winner), s.NameHash)
+			name, created, placeholder = w.readTag(tagCrops, hashes)
 			if created {
 				newcomers = append(newcomers, name)
 			}
@@ -922,22 +948,86 @@ func (w *Watcher) keepFrame(img image.Image) {
 	}
 }
 
-// tagCrops cuts slot i's name tag out of the frame the reading was taken
-// from and out of the other sampled frames of the same screen, each with
-// the regions as they sit in that frame (the headers move while the screen
-// animates in). The reading's own frame comes first.
-func tagCrops(img image.Image, samples []image.Image, layout config.Layout, i int, winner bool) []image.Image {
-	out := []image.Image{}
-	seen := false
-	for _, f := range append([]image.Image{img}, samples...) {
-		if f == nil || (seen && f == img) {
-			continue
+// sampleFrames is the frame a reading was taken from followed by the other
+// sampled frames of the same screen, without duplicates.
+func sampleFrames(img image.Image, samples []image.Image) []image.Image {
+	out := []image.Image{img}
+	for _, f := range samples {
+		if f != nil && f != img {
+			out = append(out, f)
 		}
-		if f == img {
-			seen = true
-		}
+	}
+	return out
+}
+
+// tagCropsOf cuts slot i's name tag out of each frame, with the regions as
+// they sit in that frame (the headers move while the screen animates in).
+func tagCropsOf(frames []image.Image, layout config.Layout, i int, winner bool) []image.Image {
+	out := make([]image.Image, 0, len(frames))
+	for _, f := range frames {
 		_, name, _ := SlotRegions(f, layout, i, winner)
 		out = append(out, Crop(f, Rect(f.Bounds(), name)))
 	}
 	return out
+}
+
+// tagHashes is slot i's tag hash on each frame, the reading's own first.
+func tagHashes(frames []image.Image, layout config.Layout, i int, winner bool) []uint64 {
+	out := make([]uint64, 0, len(frames))
+	for _, f := range frames {
+		_, name, _ := SlotRegions(f, layout, i, winner)
+		out = append(out, TagHash(f, Rect(f.Bounds(), name)))
+	}
+	return out
+}
+
+// coarseKey is what makes two readings the same screen regardless of what
+// was identified on them: the player count and each slot's placement and
+// whether it is a CPU.
+func coarseKey(r *Reading) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d:%v:", r.Players, r.Team)
+	for _, s := range r.Slots {
+		fmt.Fprintf(&sb, "%d/%v;", s.Rank, s.Placeholder)
+	}
+	return sb.String()
+}
+
+// mergeReadings fills what the winning reading did not identify (a name
+// tag a sparkle crossed on that frame, a caption still fading in) from the
+// other readings of the same screen in the burst: those with the same
+// placements and CPU slots, most frequent first. Readings used to be voted
+// on by their full key, so frames that differed only in what they had
+// identified split the vote and the unidentified one could win.
+func mergeReadings(b *burst, best *Reading) *Reading {
+	if best == nil {
+		return nil
+	}
+	merged := *best
+	merged.Slots = append([]SlotReading(nil), best.Slots...)
+	want := coarseKey(best)
+	var others []*burstEntry
+	for _, k := range b.order {
+		e := b.readings[k]
+		if e.reading != best && coarseKey(e.reading) == want {
+			others = append(others, e)
+		}
+	}
+	sort.SliceStable(others, func(i, j int) bool { return others[i].count > others[j].count })
+	for i := range merged.Slots {
+		s := &merged.Slots[i]
+		for _, e := range others {
+			if i >= len(e.reading.Slots) {
+				continue
+			}
+			o := e.reading.Slots[i]
+			if s.Name == "" && !s.Placeholder && o.Name != "" {
+				s.Name, s.NameDist, s.NameHash = o.Name, o.NameDist, o.NameHash
+			}
+			if s.Char == "" && o.Char != "" {
+				s.Char, s.CharDist, s.CharHash = o.Char, o.CharDist, o.CharHash
+			}
+		}
+	}
+	return &merged
 }

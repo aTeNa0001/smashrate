@@ -147,64 +147,145 @@ func WhiteHash(img image.Image, r image.Rectangle, cols, rows int) uint64 {
 // Hamming is the number of differing bits between two hashes (0..64).
 func Hamming(a, b uint64) int { return bits.OnesCount64(a ^ b) }
 
-// TagHash identifies a name tag by where its white text sits across the
-// tag: a 32x2 WhiteHash of the region. A brightness dHash of the region
-// barely saw the small text against the coloured band (two different
-// players' tags matched the same template live on 2026-11-18); the text's
-// column profile tells names apart while staying stable between frames.
+// TagHash identifies a name tag by where its white text sits: a 32x2
+// WhiteHash of the text's own bounding box inside the region. A brightness
+// dHash of the region barely saw the small text against the coloured band
+// (two different players' tags matched the same template live on
+// 2026-11-18); the text's column profile tells names apart while staying
+// the same between frames and layouts.
 func TagHash(img image.Image, r image.Rectangle) uint64 {
-	if box, ok := whiteBox(img, r); ok {
-		r = box
-	}
-	return WhiteHash(img, r, 32, 2)
+	return TagHashFrames([]image.Image{Crop(img, r)})
 }
 
-// whiteBox is the bounding box of the tag's text inside r, so the hash does
-// not depend on where in the region the text sits or how wide the region
-// is: the same tag reads the same in a 2-player panel and in an 8-player
-// one. The text is the longest run of rows holding white pixels, and within
-// those rows the heaviest cluster of white columns; the badge's white edge
-// to the left and the highlight along the winner's band to the right are
-// separated from the text by clear gaps and fall outside. ok is false when
-// there is too little white to be text.
+// TagHashFrames hashes a tag from several crops of it taken from different
+// frames of the same screen. The sparkles that drift over a panel are
+// white too and, when one touches the text, widen its box; they only ever
+// add, so the crop with the narrowest text box is the one without them,
+// and that is the one hashed (the earliest on a tie). One crop hashes as is.
+func TagHashFrames(crops []image.Image) uint64 {
+	best := -1
+	bestW := 0
+	for i, c := range crops {
+		box, ok := whiteBox(c, c.Bounds())
+		if !ok {
+			continue
+		}
+		if best < 0 || box.Dx() < bestW {
+			best, bestW = i, box.Dx()
+		}
+	}
+	if best < 0 {
+		if len(crops) == 0 {
+			return 0
+		}
+		best = 0
+	}
+	c := crops[best]
+	r := c.Bounds()
+	w, h := r.Dx(), r.Dy()
+	mask := make([]bool, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			cr, cg, cb := rgbAt(c, r.Min.X+x, r.Min.Y+y)
+			mask[y*w+x] = cr > 200 && cg > 200 && cb > 200
+		}
+	}
+	box, ok := maskBox(mask, w, h)
+	if !ok {
+		box = image.Rect(0, 0, w, h)
+	}
+	return maskHash(mask, w, box, 32, 2)
+}
+
+// maskHash is WhiteHash over a boolean mask: one bit per cell of a cols x
+// rows grid over box, set when more than 2% of the cell is on.
+func maskHash(mask []bool, w int, box image.Rectangle, cols, rows int) uint64 {
+	var hsh uint64
+	cw := float64(box.Dx()) / float64(cols)
+	ch := float64(box.Dy()) / float64(rows)
+	for gy := 0; gy < rows; gy++ {
+		for gx := 0; gx < cols; gx++ {
+			x0, x1 := box.Min.X+int(float64(gx)*cw), box.Min.X+int(float64(gx+1)*cw)
+			y0, y1 := box.Min.Y+int(float64(gy)*ch), box.Min.Y+int(float64(gy+1)*ch)
+			if x1 <= x0 {
+				x1 = x0 + 1
+			}
+			if y1 <= y0 {
+				y1 = y0 + 1
+			}
+			n, on := 0, 0
+			for y := y0; y < y1 && y < box.Max.Y; y++ {
+				for x := x0; x < x1 && x < box.Max.X; x++ {
+					if mask[y*w+x] {
+						on++
+					}
+					n++
+				}
+			}
+			hsh <<= 1
+			if n > 0 && on*50 > n {
+				hsh |= 1
+			}
+		}
+	}
+	return hsh
+}
+
+// whiteBox is the bounding box of the tag's text inside r of img (see
+// maskBox); used by diagnostics.
 func whiteBox(img image.Image, r image.Rectangle) (image.Rectangle, bool) {
 	r = r.Intersect(img.Bounds())
 	if r.Empty() {
 		return r, false
 	}
 	w, h := r.Dx(), r.Dy()
-	white := make([]bool, w*h)
-	rows := make([]int, h)
+	mask := make([]bool, w*h)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			cr, cg, cb := rgbAt(img, r.Min.X+x, r.Min.Y+y)
-			if cr > 200 && cg > 200 && cb > 200 {
-				white[y*w+x] = true
+			mask[y*w+x] = cr > 200 && cg > 200 && cb > 200
+		}
+	}
+	box, ok := maskBox(mask, w, h)
+	return box.Add(r.Min), ok
+}
+
+// maskBox is the bounding box of the text in a w x h mask: the longest
+// run of rows holding on pixels, and within those rows the heaviest
+// cluster of on columns; the badge's white edge to the left and the
+// highlight along the winner's band to the right are separated from the
+// text by clear gaps and fall outside. ok is false when there is too
+// little to be text.
+func maskBox(mask []bool, w, h int) (image.Rectangle, bool) {
+	rows := make([]int, h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if mask[y*w+x] {
 				rows[y]++
 			}
 		}
 	}
-	// the text band: the longest run of rows with a few white pixels,
+	// the text band: the longest run of rows with a few on pixels,
 	// bridging gaps of up to two rows (the dakuten sit above the kana)
 	y0, y1 := longestRun(rows, 3, 2)
 	if y1-y0 < 6 {
-		return r, false
+		return image.Rectangle{}, false
 	}
 	cols := make([]int, w)
 	for y := y0; y < y1; y++ {
 		for x := 0; x < w; x++ {
-			if white[y*w+x] {
+			if mask[y*w+x] {
 				cols[x]++
 			}
 		}
 	}
-	// the text itself: the heaviest cluster of white columns, bridging the
+	// the text itself: the heaviest cluster of on columns, bridging the
 	// spaces between glyphs but not the gap to the badge or the highlight
 	x0, x1 := heaviestCluster(cols, 12)
 	if x1-x0 < 16 {
-		return r, false
+		return image.Rectangle{}, false
 	}
-	return image.Rect(r.Min.X+x0, r.Min.Y+y0, r.Min.X+x1, r.Min.Y+y1), true
+	return image.Rect(x0, y0, x1, y1), true
 }
 
 // longestRun returns [start, end) of the longest run of indexes whose count
