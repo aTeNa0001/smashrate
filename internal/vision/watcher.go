@@ -574,6 +574,7 @@ func (w *Watcher) frameRate() float64 {
 }
 
 func (w *Watcher) handle(img image.Image, r *Reading) {
+	w.keepFrame(img)
 	layout := r.Layout
 	var in core.MatchInput
 	in.Source = "vision"
@@ -884,4 +885,27 @@ func describeEntry(e core.EntryInput) string {
 		s += fmt.Sprintf(" %d位", e.Rank)
 	}
 	return s
+}
+
+// keepFrame saves the frame a results screen was read from under
+// data/frames (the newest 40 are kept), so a wrong reading can be looked
+// at afterwards without asking anyone to stop on the screen again.
+func (w *Watcher) keepFrame(img image.Image) {
+	dir := filepath.Join(w.dataDir, "frames")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	if err := SavePNG(filepath.Join(dir, w.now().Format("20060102-150405")+".png"), img); err != nil {
+		log.Printf("vision: keep frame: %v", err)
+		return
+	}
+	names, err := filepath.Glob(filepath.Join(dir, "*.png"))
+	if err != nil {
+		return
+	}
+	sort.Strings(names)
+	for len(names) > 40 {
+		_ = os.Remove(names[0])
+		names = names[1:]
+	}
 }

@@ -261,7 +261,7 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			sr.CharRegion = layout.CharRegion(i, sr.Winner)
 			sr.NameRegion = layout.NameRegion(i, sr.Winner)
 
-			sr.NameHash = DHash(img, Rect(b, sr.NameRegion))
+			sr.NameHash = TagHash(img, Rect(b, sr.NameRegion))
 			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
 				sr.NameDist = dist
 				if strings.HasPrefix(lbl, "#") {
@@ -369,7 +369,7 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 			if err != nil {
 				return err
 			}
-			if err := c.AddTemplate(KindName, p.Name, DHash(img, Rect(b, layout.NameRegion(i, winner)))); err != nil {
+			if err := c.AddTemplate(KindName, p.Name, TagHash(img, Rect(b, layout.NameRegion(i, winner)))); err != nil {
 				return err
 			}
 		}

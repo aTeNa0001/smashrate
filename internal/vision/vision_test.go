@@ -26,11 +26,15 @@ func paint(img *image.RGBA, r image.Rectangle, seed int64) {
 
 // paintText fills a seed-dependent half of the 8x8 cells of r with white,
 // standing in for the white stat labels the screen detector looks for.
-func paintText(img *image.RGBA, r image.Rectangle, seed int64) {
+func paintText(img *image.RGBA, r image.Rectangle, seed int64) { paintTextGrid(img, r, seed, 8, 8) }
+
+// paintTextGrid fills a random half of a cols x rows grid of cells with
+// white: a stand-in for text, seen by WhiteHash/TagHash.
+func paintTextGrid(img *image.RGBA, r image.Rectangle, seed int64, cols, rows int) {
 	rng := rand.New(rand.NewSource(seed))
-	cw, ch := float64(r.Dx())/8, float64(r.Dy())/8
-	for gy := 0; gy < 8; gy++ {
-		for gx := 0; gx < 8; gx++ {
+	cw, ch := float64(r.Dx())/float64(cols), float64(r.Dy())/float64(rows)
+	for gy := 0; gy < rows; gy++ {
+		for gx := 0; gx < cols; gx++ {
 			if rng.Intn(2) == 0 {
 				continue
 			}
@@ -99,7 +103,7 @@ func frameMode(cfg config.VisionConfig, players int, mode string, charSeeds, ran
 		paint(img, Rect(img.Bounds(), s.Char), charSeeds[i])
 		paintGlyph(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])
 		if i < len(nameSeeds) {
-			paint(img, Rect(img.Bounds(), s.Name), nameSeeds[i])
+			paintTextGrid(img, Rect(img.Bounds(), s.Name), nameSeeds[i], 32, 2) // a name tag: white text
 		}
 	}
 	return img

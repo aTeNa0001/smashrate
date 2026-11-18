@@ -146,3 +146,10 @@ func WhiteHash(img image.Image, r image.Rectangle, cols, rows int) uint64 {
 
 // Hamming is the number of differing bits between two hashes (0..64).
 func Hamming(a, b uint64) int { return bits.OnesCount64(a ^ b) }
+
+// TagHash identifies a name tag by where its white text sits across the
+// tag: a 32x2 WhiteHash of the region. A brightness dHash of the region
+// barely saw the small text against the coloured band (two different
+// players' tags matched the same template live on 2026-11-18); the text's
+// column profile tells names apart while staying stable between frames.
+func TagHash(img image.Image, r image.Rectangle) uint64 { return WhiteHash(img, r, 32, 2) }
