@@ -660,7 +660,15 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 	var msg []string
 	if len(placeholders) > 0 {
 		// CPU fighters or humans without a name tag: never rate such a match.
-		w.note(fmt.Sprintf("列 %v が CPU か名前タグ未設定のため、この試合は記録しません。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders))
+		// say what was read, so the people in it can be told from the log
+		var read []string
+		for _, e := range in.Entries {
+			read = append(read, describeEntry(e))
+		}
+		for _, p := range placeholders {
+			read = append(read, fmt.Sprintf("P%d CPU/タグ未設定", p))
+		}
+		w.note(fmt.Sprintf("列 %v が CPU か名前タグ未設定のため、この試合は記録しません（読み取り: %s）。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders, strings.Join(read, ", ")))
 		return
 	}
 	if len(newcomers) > 0 {
@@ -864,4 +872,16 @@ func (w *Watcher) TeachScreen(players int, mode string) error {
 	}
 	w.forgetLastSeen()
 	return w.det.Reload(w.core)
+}
+
+// describeEntry is "P1 名前(キャラ) 2位" for a reading that is not recorded.
+func describeEntry(e core.EntryInput) string {
+	s := fmt.Sprintf("P%d %s", e.Port, e.Player)
+	if ch, ok := characters.ByKey(e.Character); ok {
+		s += "(" + ch.NameJA + ")"
+	}
+	if e.Rank > 0 {
+		s += fmt.Sprintf(" %d位", e.Rank)
+	}
+	return s
 }
