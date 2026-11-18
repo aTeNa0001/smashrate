@@ -518,7 +518,7 @@ func (w *Watcher) Process(img image.Image) {
 	if settle <= 0 {
 		settle = 1500 * time.Millisecond
 	}
-	if !b.recorded && now.Sub(b.start) >= settle {
+	if m, _ := mergeBurst(b); !b.recorded && now.Sub(b.start) >= settle && ranksComplete(m) {
 		// the panels have settled: record now rather than waiting for the
 		// screen to go away (which may take as long as the players like)
 		w.record(b)
@@ -548,14 +548,11 @@ func (w *Watcher) Flush() {
 // provided it was seen at least StableFrames times and the same screen was
 // not recorded a moment ago.
 func (w *Watcher) record(b *burst) {
-	var best *burstEntry
-	for _, k := range b.order {
-		e := b.readings[k]
-		if best == nil || e.count > best.count || (e.count == best.count && e.last.After(best.last)) {
-			best = e
-		}
-	}
+	merged, best := mergeBurst(b)
 	if best == nil {
+		if len(b.order) > 0 {
+			w.burstLog(b, "vote: only the ready page was seen; no names to record")
+		}
 		return
 	}
 	need := w.cfg.StableFrames
@@ -570,7 +567,7 @@ func (w *Watcher) record(b *burst) {
 		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
-	w.handle(best.img, best.samples, mergeReadings(b, best.reading))
+	w.handle(best.img, best.samples, merged)
 	w.mu.Lock()
 	last := w.stats.LastMessage
 	w.mu.Unlock()
@@ -983,55 +980,4 @@ func tagHashes(frames []image.Image, layout config.Layout, i int, winner bool) [
 		out = append(out, TagHash(f, Rect(f.Bounds(), name)))
 	}
 	return out
-}
-
-// coarseKey is what makes two readings the same screen regardless of what
-// was identified on them: the player count and each slot's placement and
-// whether it is a CPU.
-func coarseKey(r *Reading) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d:%v:", r.Players, r.Team)
-	for _, s := range r.Slots {
-		fmt.Fprintf(&sb, "%d/%v;", s.Rank, s.Placeholder)
-	}
-	return sb.String()
-}
-
-// mergeReadings fills what the winning reading did not identify (a name
-// tag a sparkle crossed on that frame, a caption still fading in) from the
-// other readings of the same screen in the burst: those with the same
-// placements and CPU slots, most frequent first. Readings used to be voted
-// on by their full key, so frames that differed only in what they had
-// identified split the vote and the unidentified one could win.
-func mergeReadings(b *burst, best *Reading) *Reading {
-	if best == nil {
-		return nil
-	}
-	merged := *best
-	merged.Slots = append([]SlotReading(nil), best.Slots...)
-	want := coarseKey(best)
-	var others []*burstEntry
-	for _, k := range b.order {
-		e := b.readings[k]
-		if e.reading != best && coarseKey(e.reading) == want {
-			others = append(others, e)
-		}
-	}
-	sort.SliceStable(others, func(i, j int) bool { return others[i].count > others[j].count })
-	for i := range merged.Slots {
-		s := &merged.Slots[i]
-		for _, e := range others {
-			if i >= len(e.reading.Slots) {
-				continue
-			}
-			o := e.reading.Slots[i]
-			if s.Name == "" && !s.Placeholder && o.Name != "" {
-				s.Name, s.NameDist, s.NameHash = o.Name, o.NameDist, o.NameHash
-			}
-			if s.Char == "" && o.Char != "" {
-				s.Char, s.CharDist, s.CharHash = o.Char, o.CharDist, o.CharHash
-			}
-		}
-	}
-	return &merged
 }

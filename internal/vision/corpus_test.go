@@ -20,6 +20,7 @@ type corpusFrame struct {
 	File     string `json:"file"`
 	Sequence string `json:"sequence"`              // frames of one appearance share it: names and captions need only one of them
 	NameOpt  bool   `json:"name_by_hash_optional"` // a lone frame whose tag a sparkle spoils: the name need not be identified
+	Page     string `json:"page"`                  // results (default), detail or ready
 	Players  int    `json:"players"`
 	Slots    []struct {
 		Port int    `json:"port"`
@@ -71,7 +72,11 @@ func TestCorpusFramesAreReadCorrectly(t *testing.T) {
 				names = append(names, "")
 			}
 		}
-		if err := Teach(c, cfg, img, f.Players, "", chars, ranks, names); err != nil {
+		page := f.Page
+		if page == "" {
+			page = PageResults
+		}
+		if err := TeachPage(c, cfg, img, f.Players, "", page, chars, ranks, names); err != nil {
 			t.Fatalf("%s: teach: %v", f.File, err)
 		}
 	}
@@ -91,6 +96,18 @@ func TestCorpusFramesAreReadCorrectly(t *testing.T) {
 		}
 		if r.Players != f.Players {
 			t.Errorf("%s: read as %d players, want %d", f.File, r.Players, f.Players)
+			continue
+		}
+		if want := map[bool]string{true: f.Page, false: PageResults}[f.Page != ""]; r.Page != want {
+			t.Errorf("%s: read as the %s page, want %s", f.File, r.Page, want)
+			continue
+		}
+		if r.Page == PageReady {
+			for i, s := range f.Slots {
+				if r.Slots[i].Rank != s.Rank {
+					t.Errorf("%s P%d: rank %d, want %d (dist %d)", f.File, s.Port, r.Slots[i].Rank, s.Rank, r.Slots[i].RankDist)
+				}
+			}
 			continue
 		}
 		for i, s := range f.Slots {

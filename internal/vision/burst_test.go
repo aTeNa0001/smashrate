@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aTeNa0001/smashrate/internal/config"
 	"github.com/aTeNa0001/smashrate/internal/core"
 )
 
@@ -387,5 +388,72 @@ func TestRecordedMatchKeepsItsScreen(t *testing.T) {
 	th := Shrink(f1, 4)
 	if th.Bounds().Dx() != f1.Bounds().Dx()/4 {
 		t.Fatalf("thumbnail width %d", th.Bounds().Dx())
+	}
+}
+
+// An 8-player screen seen only on the detail page (names, characters) and
+// then the ready page (placements) is recorded with both merged: this is
+// what a quickly skipped results page leaves.
+func TestDetailAndReadyPagesMergeIntoOneMatch(t *testing.T) {
+	c, err := core.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cfg := config.Default().Vision
+	cfg.CooldownSeconds = 60
+	load := func(name string) image.Image {
+		img, err := OpenFiles(filepath.Join("testdata", "corpus", name)).Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+	detail, ready := load("detail-8p-lucina-cpus.jpg"), load("ready-8p.jpg")
+	chars := []string{"lucina", "jigglypuff", "ike", "villager", "banjo_kazooie", "byleth", "young_link", "terry"}
+	if err := TeachPage(c, cfg, detail, 8, "", PageDetail, chars, nil, []string{"はるか"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := TeachPage(c, cfg, ready, 8, "", PageReady, nil, []string{"2", "1", "5", "4", "7", "6", "8", "3"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	layout, _ := cfg.Layout(8, "")
+	for i := 1; i < 8; i++ { // the CPUs' tags, as OCR would have learned them
+		_, name, _ := SlotRegions(detail, layout, i, false)
+		_ = c.AddTemplate(KindName, PlaceholderLabel, TagHash(detail, Rect(detail.Bounds(), name)))
+	}
+	var msgs []string
+	w, err := NewWatcher(cfg, c, t.TempDir(), func(s string) { msgs = append(msgs, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	w.now = func() time.Time { clock = clock.Add(100 * time.Millisecond); return clock }
+	w.Process(detail)
+	w.Process(detail)
+	if ms, _ := c.Matches(10, 0); len(ms) != 0 {
+		t.Fatal("no placements yet: nothing may be recorded")
+	}
+	for i := 0; i < 20; i++ { // 2 s of the ready page: placements known, settle passes
+		w.Process(ready)
+	}
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("expected one match, got %d; msgs=%v", len(ms), msgs)
+	}
+	want := map[string]int{"lucina": 2, "jigglypuff": 1, "ike": 5, "villager": 4, "banjo_kazooie": 7, "byleth": 6, "young_link": 8, "terry": 3}
+	for _, e := range ms[0].Entries {
+		if want[e.Character] != e.Rank {
+			t.Errorf("%s (%s): rank %d, want %d", e.PlayerName, e.Character, e.Rank, want[e.Character])
+		}
+		if e.Character == "lucina" && (e.PlayerName != "はるか" || e.CPU) {
+			t.Errorf("P1 should be はるか: %+v", e)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		w.Process(noise())
+	}
+	if ms, _ := c.Matches(10, 0); len(ms) != 1 {
+		t.Fatalf("the appearance must be recorded once, got %d", len(ms))
 	}
 }

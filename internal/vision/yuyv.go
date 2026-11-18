@@ -3,6 +3,7 @@ package vision
 import (
 	"image"
 	"image/color"
+	"image/draw"
 )
 
 // YUYV is a frame in the capture board's native packed 4:2:2 layout
@@ -110,4 +111,20 @@ func toRGBA(img image.Image) image.Image {
 		return p.ToRGBA()
 	}
 	return img
+}
+
+// asRGBA returns img as an *image.RGBA whatever its type: a YUYV frame
+// from the board, an RGBA one, or a decoded JPEG (YCbCr) when a saved
+// appearance is replayed.
+func asRGBA(img image.Image) *image.RGBA {
+	switch p := img.(type) {
+	case *image.RGBA:
+		return p
+	case *YUYV:
+		return p.ToRGBA()
+	}
+	b := img.Bounds()
+	out := image.NewRGBA(b)
+	draw.Draw(out, b, img, b.Min, draw.Src)
+	return out
 }

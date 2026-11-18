@@ -1249,3 +1249,25 @@ func (c *Core) SetEvidence(matchID int64, path string) error {
 	}
 	return nil
 }
+
+// RelabelTemplates renames the learned templates of the given kinds from
+// one label to another, optionally only those learned at or after since
+// (the zero time means all). It returns how many were changed.
+func (c *Core) RelabelTemplates(kinds []string, from, to string, since time.Time) (int, error) {
+	var total int64
+	for _, k := range kinds {
+		q := `UPDATE vision_templates SET label = ? WHERE kind = ? AND label = ?`
+		args := []any{to, k, from}
+		if !since.IsZero() {
+			q += ` AND created_at >= ?`
+			args = append(args, since.UTC().Format(time.RFC3339))
+		}
+		res, err := c.db.Exec(q, args...)
+		if err != nil {
+			return int(total), err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+	return int(total), nil
+}

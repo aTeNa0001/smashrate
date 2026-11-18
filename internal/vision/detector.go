@@ -21,8 +21,8 @@ const (
 	// and of the stat-row band across the whole frame (see WhiteHash).
 	// The kind names changed when the hash did, so templates learned with
 	// the old brightness hash are simply never loaded.
-	KindScreen = "screen-text" // label "results:<players>"
-	KindBand   = "band-text"   // label "results:<players>"
+	KindScreen = "screen-text" // label "<page>:<players>" (page: results, detail, ready)
+	KindBand   = "band-text"   // label "<page>:<players>"
 	KindChar   = "char"        // label = character key
 	KindRank   = "rank"        // label = "1".."8"
 	KindName   = "name"        // label = player name (as shown on the name tag)
@@ -55,7 +55,8 @@ type SlotReading struct {
 // Reading is a recognised results screen.
 type Reading struct {
 	Players int
-	Team    bool // team-battle results screen: players sharing a rank are one team
+	Page    string // which page of the results screen (see pages.go)
+	Team    bool   // team-battle results screen: players sharing a rank are one team
 	Layout  config.Layout
 	Slots   []SlotReading
 }
@@ -63,7 +64,7 @@ type Reading struct {
 // Key is a stable string used to compare consecutive readings.
 func (r Reading) Key() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d:%v:", r.Players, r.Team)
+	fmt.Fprintf(&sb, "%s:%d:%v:", r.Page, r.Players, r.Team)
 	for _, s := range r.Slots {
 		fmt.Fprintf(&sb, "P%d=%s/%v/%s/%d;", s.Port, s.Name, s.Placeholder, s.Char, s.Rank)
 	}
@@ -213,50 +214,44 @@ func (d *Detector) ScreenMatches(img image.Image) []ScreenMatch {
 	return out
 }
 
-// isScreen reports whether img is layout's results screen: both the first
-// panel's labels and the full-width band must match a template learned for
-// this layout (the band is what tells 6 from 7 players).
-func (d *Detector) isScreen(img image.Image, layout config.Layout) bool {
-	want := layout.ScreenLabel()
-	ph, bh := screenHashes(img, layout)
-	if label, _, ok := d.classify(KindScreen, ph, d.cfg.ScreenThreshold); !ok || label != want {
-		return false
-	}
-	label, _, ok := d.classify(KindBand, bh, d.cfg.BandThreshold)
-	return ok && label == want
-}
-
 // Detect tries every layout and returns a reading when the frame looks like
 // a results screen. Unknown characters/ranks are left zero.
 func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 	b := img.Bounds()
 	for _, layout := range d.cfg.Layouts {
-		if !d.isScreen(img, layout) {
+		page, ok := d.screenPage(img, layout)
+		if !ok {
 			continue
 		}
-		r := &Reading{Players: layout.Players, Team: layout.Mode == "team", Layout: layout}
+		r := &Reading{Players: layout.Players, Team: layout.Mode == "team", Layout: layout, Page: page}
 		// The placement numerals first: each is matched by its shape
 		// signature (independent of the column and background), and knowing
 		// who won tells where that panel's text sits. One unread numeral is
 		// inferred from the others before the text is read, so the winner's
 		// shifted regions are used even when the gold "1" itself was unread.
+		// The detail page shows no numerals; the ready page shows nothing
+		// else (see pages.go).
 		for i, slot := range layout.Slots {
-			sr := SlotReading{Port: slot.Port, CaptionTop: CaptionTop(img, layout, i)}
-			_, _, rankRegion := SlotRegions(img, layout, i, false)
-			if sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, rankRegion))); ok {
-				sr.RankHash = sig
-				if lbl, dist, ok := d.classifyRank(sig); ok {
-					sr.Rank, _ = strconv.Atoi(lbl)
-					sr.RankDist = dist
-				} else {
-					sr.RankDist = dist
-				}
-			} else {
+			sr := SlotReading{Port: slot.Port, CaptionTop: -1}
+			switch page {
+			case PageResults:
+				sr.CaptionTop = CaptionTop(img, layout, i)
+				_, _, rankRegion := SlotRegions(img, layout, i, false)
+				d.readRank(img, rankRegion, &sr)
+			case PageReady:
+				d.readRank(img, readyRankRegion(slot), &sr)
+			default:
+				sr.CaptionTop = CaptionTop(img, layout, i)
 				sr.RankDist = 64
 			}
 			r.Slots = append(r.Slots, sr)
 		}
-		fillMissingRank(r)
+		if page != PageDetail {
+			fillMissingRank(r)
+		}
+		if page == PageReady {
+			return r, true
+		}
 		for i := range r.Slots {
 			sr := &r.Slots[i]
 			sr.Winner = sr.Rank == 1

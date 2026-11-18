@@ -59,7 +59,7 @@ Commands:
   vision snapshot [-out f]    grab one frame from the capture board to a PNG
   vision regions -image f [-players N] [-mode team]
                               write crops of every layout region (for tuning smashrate.toml)
-  vision teach -image f -players N
+  vision teach -image f -players N [-page results|detail|ready]
                               learn what the results screen looks like (once per player count);
                               characters, placements and name tags are then learned automatically.
                               Team battles need nothing extra: tied placements mean one team.
@@ -449,6 +449,10 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	scale := fs.Int("scale", 0, "regions: also write up_*.png crops enlarged by this factor (what the OCR engine sees)")
 	withOCR := fs.Bool("ocr", false, "test: also run the OCR engine on each column's name tag and caption and print what it reads")
 	winner := fs.Int("winner", 0, "regions: column (1-based) of the 1st-place panel, whose caption/tag regions are shifted down")
+	page := fs.String("page", vision.PageResults, "teach: which page of the results screen the image shows: results, detail (落とした数...) or ready (READY FOR THE NEXT BATTLE)")
+	from := fs.String("from", "", "relabel: the current label, e.g. results:8")
+	to := fs.String("to", "", "relabel: the new label, e.g. detail:8")
+	since := fs.String("since", "", "relabel: only templates learned at or after this time (RFC3339)")
 	fs.Parse(rest)
 
 	switch sub {
@@ -576,10 +580,28 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := vision.Teach(c, cfg.Vision, img, *players, *mode, splitCSV(*chars), splitCSV(*ranks), splitCSV(*names)); err != nil {
+		if err := vision.TeachPage(c, cfg.Vision, img, *players, *mode, *page, splitCSV(*chars), splitCSV(*ranks), splitCSV(*names)); err != nil {
 			return err
 		}
-		fmt.Println("learned templates from", *imagePath)
+		fmt.Println("learned templates from", *imagePath, "(page", *page+")")
+		return nil
+	case "relabel":
+		// fix a page taught under the wrong label (screen and band templates)
+		if *from == "" || *to == "" {
+			return errors.New("usage: vision relabel -from results:8 -to detail:8 [-since RFC3339]")
+		}
+		var t time.Time
+		if *since != "" {
+			var err error
+			if t, err = time.Parse(time.RFC3339, *since); err != nil {
+				return err
+			}
+		}
+		n, err := c.RelabelTemplates([]string{vision.KindScreen, vision.KindBand}, *from, *to, t)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("relabelled %d templates %s -> %s\n", n, *from, *to)
 		return nil
 	case "test":
 		if *imagePath == "" {
@@ -610,7 +632,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		if r.Team {
 			kind = "team battle"
 		}
-		fmt.Printf("results screen, %d players (%s), image %dx%d\n", r.Players, kind, img.Bounds().Dx(), img.Bounds().Dy())
+		fmt.Printf("results screen, %d players (%s), page %s, image %dx%d\n", r.Players, kind, r.Page, img.Bounds().Dx(), img.Bounds().Dy())
 		for _, s := range r.Slots {
 			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d%s (dist %2d, glyph %016x)  caption at %.3f\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, map[bool]string{true: " (inferred)"}[s.Inferred], s.RankDist, s.RankHash, s.CaptionTop)
 		}

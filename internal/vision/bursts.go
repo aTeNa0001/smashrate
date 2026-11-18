@@ -154,7 +154,7 @@ func Replay(det *Detector, dir string) (*ReplayResult, error) {
 		}
 	}
 	if best != nil {
-		res.Best = mergeReadings(b, best.reading)
+		res.Best, _ = mergeBurst(b)
 	}
 	return res, nil
 }
@@ -210,7 +210,7 @@ func (w *Watcher) keepEvidence(matchID int64, img image.Image) {
 		return
 	}
 	name := fmt.Sprintf("%d.jpg", matchID)
-	full := toRGBA(img).(*image.RGBA)
+	full := asRGBA(img)
 	if err := writeJPEG(filepath.Join(dir, name), full, 85); err != nil {
 		log.Printf("vision: evidence: %v", err)
 		return
