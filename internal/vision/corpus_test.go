@@ -23,11 +23,12 @@ type corpusFrame struct {
 	Page     string `json:"page"`                  // results (default), detail or ready
 	Players  int    `json:"players"`
 	Slots    []struct {
-		Port int    `json:"port"`
-		Name string `json:"name"`
-		CPU  bool   `json:"cpu"`
-		Char string `json:"char"`
-		Rank int    `json:"rank"`
+		Port         int    `json:"port"`
+		Name         string `json:"name"`
+		CPU          bool   `json:"cpu"`
+		Char         string `json:"char"`
+		Rank         int    `json:"rank"`
+		CaptionFound bool   `json:"caption_found"` // the caption must be located in the header (not on the portrait)
 	} `json:"slots"`
 }
 
@@ -128,6 +129,9 @@ func TestCorpusFramesAreReadCorrectly(t *testing.T) {
 				if s.Name != "" && got.Name != s.Name && !f.NameOpt {
 					t.Errorf("%s P%d: name %q, want %q (dist %d)", f.File, s.Port, got.Name, s.Name, got.NameDist)
 				}
+			}
+			if s.CaptionFound && (got.CaptionTop < 0 || got.CaptionTop > 0.28) {
+				t.Errorf("%s P%d: caption found at %.3f, want it in the header", f.File, s.Port, got.CaptionTop)
 			}
 			if s.CPU && got.Name != "" {
 				t.Errorf("%s P%d: a CPU tag was identified as %q", f.File, s.Port, got.Name)

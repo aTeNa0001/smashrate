@@ -74,8 +74,12 @@ func captionRows(img image.Image, slot config.Slot) (top, bottom float64, ok boo
 	maxGap := int(captionMaxGap * float64(h))
 	bestFirst, bestLast := -1, -1
 	first, last, gap := -1, -1, 0
+	// a caption starts in the header (the top 28% even on the winner's
+	// enlarged panel or while the headers slide in); white rows further down
+	// are the portrait (Piranha Plant's teeth were taken for its caption)
+	headerEnd := b.Min.Y + h*28/100
 	close := func() {
-		if first >= 0 && (bestFirst < 0 || last-first > bestLast-bestFirst) {
+		if first >= 0 && first < headerEnd && (bestFirst < 0 || last-first > bestLast-bestFirst) {
 			bestFirst, bestLast = first, last
 		}
 		first, last, gap = -1, -1, 0
