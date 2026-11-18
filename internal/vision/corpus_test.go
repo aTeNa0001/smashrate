@@ -133,6 +133,9 @@ func TestCorpusFramesAreReadCorrectly(t *testing.T) {
 			if s.CaptionFound && (got.CaptionTop < 0 || got.CaptionTop > 0.28) {
 				t.Errorf("%s P%d: caption found at %.3f, want it in the header", f.File, s.Port, got.CaptionTop)
 			}
+			if r.Page != PageReady && s.CPU != got.GreyPanel {
+				t.Errorf("%s P%d: grey panel %v, but cpu is %v", f.File, s.Port, got.GreyPanel, s.CPU)
+			}
 			if s.CPU && got.Name != "" {
 				t.Errorf("%s P%d: a CPU tag was identified as %q", f.File, s.Port, got.Name)
 			}

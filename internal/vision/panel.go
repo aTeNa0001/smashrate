@@ -21,6 +21,8 @@ import (
 // frame height). Measured on 1080p frames: 20-30 px gap, 30 px of text.
 const (
 	captionGap     = 0.018
+	narrowTagGap   = 0.062 // caption bottom to tag top on a narrow panel (badge in between)
+	narrowTagH     = 0.05
 	captionMargin  = 0.008
 	captionMaxGap  = 0.013 // a longer run of empty rows ends the caption
 	captionMinRows = 0.012 // less than this is a stray highlight, not text
@@ -120,6 +122,11 @@ func SlotRegions(img image.Image, layout config.Layout, i int, winner bool) (cha
 	}
 	char = config.Region{X: slot.Char.X, Y: top - captionMargin, W: slot.Char.W, H: bottom - top + 2*captionMargin}
 	name = config.Region{X: slot.Name.X, Y: bottom + captionGap, W: slot.Name.W, H: slot.Name.H}
+	if slot.Rank.Y >= 0.1 {
+		// narrow panels (5-8 players): the 1P/CP badge has a row of its own
+		// under the caption and the tag is below it, not beside it
+		name.Y, name.H = bottom+narrowTagGap, narrowTagH
+	}
 	return char, name, rank
 }
 

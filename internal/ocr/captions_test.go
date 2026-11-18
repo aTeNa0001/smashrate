@@ -23,3 +23,16 @@ func TestMatchCharacterReadsJapaneseConsoleCaptions(t *testing.T) {
 		}
 	}
 }
+
+func TestPlausibleName(t *testing.T) {
+	for _, s := range []string{"はるか", "ぎんぴか", "レンジでチンたなはわ", "つゆだく", "Taro", "ゆげどおしをまたあか"} {
+		if !PlausibleName(s) {
+			t.Errorf("%q should be a plausible name", s)
+		}
+	}
+	for _, s := range []string{"ア.ン", "a", "、、、るか", "◆◆", ""} {
+		if PlausibleName(s) {
+			t.Errorf("%q should not become a player", s)
+		}
+	}
+}

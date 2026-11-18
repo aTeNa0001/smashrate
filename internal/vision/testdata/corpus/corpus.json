@@ -162,5 +162,20 @@
       {"port": 2, "name": "ぎんぴか", "char": "sephiroth", "rank": 1},
       {"port": 3, "name": "レンジでチンたなはわ", "char": "hero", "rank": 2}
     ]
+  },
+  {
+    "file": "results-7p-three-humans.jpg",
+    "note": "7 players, three humans and four CPUs, 2P and 3P tied 6th (2026-11-18 22:54). The tags were read on the badge row (\"ア.ン\", \"ICP\") and a CPU taken for a human: on narrow panels the tag is below the badge, and grey panels are CPUs",
+    "players": 7,
+    "name_by_hash_optional": true,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "lucina", "rank": 2},
+      {"port": 2, "name": "つゆだく", "char": "wii_fit_trainer", "rank": 6},
+      {"port": 3, "name": "レンジでチンたなはわ", "char": "samus", "rank": 6},
+      {"port": 4, "name": "", "cpu": true, "char": "peach", "rank": 3},
+      {"port": 5, "name": "", "cpu": true, "char": "steve", "rank": 4},
+      {"port": 6, "name": "", "cpu": true, "char": "zelda", "rank": 1},
+      {"port": 7, "name": "", "cpu": true, "char": "kazuya", "rank": 5}
+    ]
   }
 ]

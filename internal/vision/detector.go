@@ -48,6 +48,7 @@ type SlotReading struct {
 	Rank        int     // 0 if unknown
 	Inferred    bool    // the numeral was unread and Rank is the one placement left over
 	CaptionTop  float64 // where the caption's text was found (fraction of the frame height), -1 if not
+	GreyPanel   bool    // the panel is CPU grey
 	RankDist    int
 	RankHash    uint64
 }
@@ -258,7 +259,11 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			sr.CharRegion, sr.NameRegion, _ = SlotRegions(img, layout, i, sr.Winner)
 
 			sr.NameHash = TagHash(img, Rect(b, sr.NameRegion))
-			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
+			if _, coloured := panelHue(img, layout, i); !coloured && !r.Team {
+				// a grey panel is a CPU (humans have their port colour): its
+				// tag is never a person, whatever it hashes or reads as
+				sr.Placeholder, sr.GreyPanel = true, true
+			} else if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
 				sr.NameDist = dist
 				if strings.HasPrefix(lbl, "#") {
 					sr.Placeholder = true

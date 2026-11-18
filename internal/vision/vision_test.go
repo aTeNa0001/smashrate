@@ -104,6 +104,7 @@ func frameMode(cfg config.VisionConfig, players int, mode string, charSeeds, ran
 		paintGlyph(img, Rect(img.Bounds(), s.Rank), rankSeeds[i])
 		if i < len(nameSeeds) {
 			paintTextGrid(img, Rect(img.Bounds(), s.Name), nameSeeds[i], 32, 2) // a name tag: white text
+			paintPanelColour(img, s, i)                                         // a human's panel has their port colour
 		}
 	}
 	return img
@@ -467,6 +468,11 @@ func TestTeamBattleResultsScreen(t *testing.T) {
 	// a 2v2 result on the ordinary 4-player screen: columns A,B (1st) and
 	// C,D (2nd) share placements, which is what makes it a team battle
 	tf := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 21, 22, 22}, 41, 42, 43, 44)
+	// in a team battle teammates' panels share the team colour: A,B red, C,D blue
+	lay4, _ := cfg.Layout(4, "")
+	paintPanelColour(tf, lay4.Slots[1], 0)
+	paintPanelColour(tf, lay4.Slots[2], 1)
+	paintPanelColour(tf, lay4.Slots[3], 1)
 	if err := Teach(c, cfg, tf, 4, "", []string{"mario", "link", "fox", "kirby"}, []string{"1", "1", "2", "2"}, []string{"A", "B", "C", "D"}); err != nil {
 		t.Fatal(err)
 	}
@@ -531,3 +537,35 @@ func TestNormalizeLabel(t *testing.T) {
 // feed processes one frame and flushes the burst, as a screen that is
 // shown and then disappears would.
 func feed(w *Watcher, img image.Image) { w.Process(img); w.Flush() }
+
+// paintPanelColour fills the knock-out-time box of slot i with a port
+// colour, as the game does for a human (a CPU's panel stays grey).
+func paintPanelColour(img *image.RGBA, s config.Slot, i int) {
+	cols := []color.RGBA{{220, 40, 50, 255}, {40, 110, 220, 255}, {230, 180, 20, 255}, {30, 170, 90, 255}}
+	r := Rect(img.Bounds(), config.Region{X: s.Char.X, Y: 0.57, W: s.Char.W, H: 0.09})
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			img.Set(x, y, cols[i%len(cols)])
+		}
+	}
+}
+
+// The same placements on panels of four different colours are a
+// free-for-all with two ties, not a team battle.
+func TestTiedPlacementsWithPortColoursAreAFreeForAll(t *testing.T) {
+	c, _ := core.Open(":memory:")
+	defer c.Close()
+	cfg := testVisionCfg()
+	cfg.CooldownSeconds = 1
+	cfg.OCR.Engine = "none"
+	f := frameMode(cfg, 4, "", []int64{11, 12, 13, 14}, []int64{21, 21, 22, 22}, 41, 42, 43, 44)
+	if err := Teach(c, cfg, f, 4, "", []string{"mario", "link", "fox", "kirby"}, []string{"1", "1", "2", "2"}, []string{"A", "B", "C", "D"}); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := NewWatcher(cfg, c, t.TempDir(), func(string) {})
+	feed(w, f)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 || ms[0].Mode != core.ModeFFA {
+		t.Fatalf("ties on differently coloured panels are a free-for-all: %+v", ms)
+	}
+}

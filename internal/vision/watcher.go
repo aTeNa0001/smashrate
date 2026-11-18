@@ -189,7 +189,7 @@ func (w *Watcher) readTag(crops []image.Image, hashes []uint64) (name string, cr
 			break // one reading per frame is enough to compare lengths
 		}
 	}
-	if first == "" {
+	if first == "" || !ocr.PlausibleName(first) {
 		return "", false, false
 	}
 	p, err := w.core.GetOrCreatePlayer(first)
@@ -688,10 +688,11 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: rank, Character: char, CPU: cpu})
 	}
 
-	// Team battle and free-for-all share the same results screen; what tells
-	// them apart is that teammates get the same placement. So players who
-	// share a rank are recorded as one team, everyone else as their own.
-	// (A timed free-for-all can tie too, which is accepted as a team result.)
+	// Team battle and free-for-all share the same results screen. Teammates
+	// share a placement, but so do free-for-all players knocked out at the
+	// same moment: tied players are one team only when their panels share a
+	// team colour (see teams.go); otherwise each is their own team with a
+	// tied placement.
 	seenRank := map[int]int{}
 	for _, e := range in.Entries {
 		seenRank[e.Rank]++
@@ -702,12 +703,20 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 			tied = true
 		}
 	}
-	if tied || r.Team {
+	teams := r.Team
+	if tied && !teams {
+		var ranks []int
+		for _, s := range r.Slots {
+			ranks = append(ranks, s.Rank)
+		}
+		teams = tiesAreTeams(img, layout, ranks)
+	}
+	if teams {
 		for i := range in.Entries {
 			in.Entries[i].Team = in.Entries[i].Rank
 		}
 	}
-	if tied && len(seenRank) == 1 {
+	if tied && len(seenRank) == 1 { // everyone tied: nothing to rate, team or not
 		w.note("全員が同順位のため記録しません（チーム分けが判定できません）。")
 		return
 	}

@@ -253,3 +253,23 @@ func MatchName(text string, candidates []string) string {
 	}
 	return ""
 }
+
+// PlausibleName reports whether an OCR reading of a name tag is worth
+// registering as a new player: at least two characters, all of them
+// letters, digits, kana or kanji (the console only allows those, plus a
+// few symbols we never see). Fragments such as "ア.ン" (a tag read through
+// the edge of the badge) are not names.
+func PlausibleName(s string) bool {
+	rs := []rune(s)
+	if len(rs) < 2 {
+		return false
+	}
+	for _, r := range rs {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), r == 'ー', r == '・', r == '～':
+		default:
+			return false
+		}
+	}
+	return true
+}
