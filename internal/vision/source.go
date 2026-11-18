@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	_ "image/jpeg" // saved appearances are JPEG
 	"image/png"
 	"io"
 	"os"

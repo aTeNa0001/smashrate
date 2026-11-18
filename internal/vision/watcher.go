@@ -65,6 +65,9 @@ type burst struct {
 	// the status page but nothing more is recorded until the screen goes
 	// away and comes back.
 	recorded bool
+	// dir is where this appearance's frames are being saved (see bursts.go)
+	dir   string
+	saved int
 }
 
 type burstEntry struct {
@@ -491,6 +494,7 @@ func (w *Watcher) Process(img image.Image) {
 		b.readings[key] = e
 		b.order = append(b.order, key)
 	}
+	w.saveBurstFrame(b, b.frames, img, reading)
 	e.reading, e.img, e.last = reading, img, now
 	if len(e.samples) < 3 {
 		e.samples = append(e.samples, img)
@@ -546,12 +550,19 @@ func (w *Watcher) record(b *burst) {
 	if need <= 0 {
 		need = 1
 	}
+	defer func() {
+		w.burstLog(b, fmt.Sprintf("vote: %d frames, %d readings, best seen %d times", b.frames, len(b.readings), best.count))
+	}()
 	if best.count < need {
 		ms := int(b.last.Sub(b.start)/time.Millisecond) + int(1000/w.frameRate())
 		w.note(fmt.Sprintf("リザルト画面が %.1f 秒（%d フレーム）だけ見えましたが、同じ読み取りが %d 回未満だったので記録しませんでした。smashrate.toml の stable_frames を 1 にすると 1 フレームでも記録します。", float64(ms)/1000, b.frames, need))
 		return
 	}
 	w.handle(best.img, best.samples, best.reading)
+	w.mu.Lock()
+	last := w.stats.LastMessage
+	w.mu.Unlock()
+	w.burstLog(b, "result: "+last)
 }
 
 // repeat reports whether the same result (players and placements) was

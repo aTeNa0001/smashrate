@@ -65,6 +65,7 @@ Commands:
                               Team battles need nothing extra: tied placements mean one team.
                               Optional: -chars a,b -ranks 1,2 -names Taro,Hanako to pre-teach them.
   vision test -image f [-ocr] run the detector on a screenshot and print what it sees (-ocr: also what OCR reads)
+  vision replay [dir ...]       replay saved appearances (data/bursts) through the detector; no recording
   vision ocr -image f         run the name-tag OCR engine on an image and print the text
   vision watch                run only the capture watcher (no web server)
 `
@@ -659,6 +660,36 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 			return err
 		}
 		fmt.Printf("engine: %s\nraw: %q\nname: %q\n", eng.Name(), text, ocr.NormalizeName(text))
+		return nil
+	case "replay":
+		// replay every saved appearance (or the ones named) through the
+		// detector and say what would have been recorded
+		dirs := fs.Args()
+		if len(dirs) == 0 {
+			dirs, _ = filepath.Glob(filepath.Join(cfg.Server.DataDir, "bursts", "*"))
+		}
+		det, err := vision.NewDetector(cfg.Vision, c)
+		if err != nil {
+			return err
+		}
+		for _, dir := range dirs {
+			res, err := vision.Replay(det, dir)
+			if err != nil {
+				fmt.Printf("%s: %v\n", dir, err)
+				continue
+			}
+			fmt.Printf("%s: %d frames\n", filepath.Base(dir), res.Frames)
+			for k, n := range res.Readings {
+				fmt.Printf("  %3d  %s\n", n, k)
+			}
+			if res.Best != nil {
+				fmt.Printf("  -> would record: %d players", res.Best.Players)
+				for _, s := range res.Best.Slots {
+					fmt.Printf("  P%d %s/%s/%d", s.Port, s.Name, s.Char, s.Rank)
+				}
+				fmt.Println()
+			}
+		}
 		return nil
 	case "watch":
 		w, err := vision.NewWatcher(cfg.Vision, c, cfg.Server.DataDir, nil)
