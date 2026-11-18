@@ -152,4 +152,112 @@ func Hamming(a, b uint64) int { return bits.OnesCount64(a ^ b) }
 // barely saw the small text against the coloured band (two different
 // players' tags matched the same template live on 2026-11-18); the text's
 // column profile tells names apart while staying stable between frames.
-func TagHash(img image.Image, r image.Rectangle) uint64 { return WhiteHash(img, r, 32, 2) }
+func TagHash(img image.Image, r image.Rectangle) uint64 {
+	if box, ok := whiteBox(img, r); ok {
+		r = box
+	}
+	return WhiteHash(img, r, 32, 2)
+}
+
+// whiteBox is the bounding box of the tag's text inside r, so the hash does
+// not depend on where in the region the text sits or how wide the region
+// is: the same tag reads the same in a 2-player panel and in an 8-player
+// one. The text is the longest run of rows holding white pixels, and within
+// those rows the heaviest cluster of white columns; the badge's white edge
+// to the left and the highlight along the winner's band to the right are
+// separated from the text by clear gaps and fall outside. ok is false when
+// there is too little white to be text.
+func whiteBox(img image.Image, r image.Rectangle) (image.Rectangle, bool) {
+	r = r.Intersect(img.Bounds())
+	if r.Empty() {
+		return r, false
+	}
+	w, h := r.Dx(), r.Dy()
+	white := make([]bool, w*h)
+	rows := make([]int, h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			cr, cg, cb := rgbAt(img, r.Min.X+x, r.Min.Y+y)
+			if cr > 200 && cg > 200 && cb > 200 {
+				white[y*w+x] = true
+				rows[y]++
+			}
+		}
+	}
+	// the text band: the longest run of rows with a few white pixels,
+	// bridging gaps of up to two rows (the dakuten sit above the kana)
+	y0, y1 := longestRun(rows, 3, 2)
+	if y1-y0 < 6 {
+		return r, false
+	}
+	cols := make([]int, w)
+	for y := y0; y < y1; y++ {
+		for x := 0; x < w; x++ {
+			if white[y*w+x] {
+				cols[x]++
+			}
+		}
+	}
+	// the text itself: the heaviest cluster of white columns, bridging the
+	// spaces between glyphs but not the gap to the badge or the highlight
+	x0, x1 := heaviestCluster(cols, 12)
+	if x1-x0 < 16 {
+		return r, false
+	}
+	return image.Rect(r.Min.X+x0, r.Min.Y+y0, r.Min.X+x1, r.Min.Y+y1), true
+}
+
+// longestRun returns [start, end) of the longest run of indexes whose count
+// is at least min, allowing up to bridge consecutive misses inside a run.
+func longestRun(counts []int, min, bridge int) (int, int) {
+	bestS, bestE := 0, 0
+	s, miss := -1, 0
+	for i, c := range counts {
+		if c >= min {
+			if s < 0 {
+				s = i
+			}
+			miss = 0
+			if i+1-s > bestE-bestS {
+				bestS, bestE = s, i+1
+			}
+			continue
+		}
+		if s >= 0 {
+			miss++
+			if miss > bridge {
+				s = -1
+			}
+		}
+	}
+	return bestS, bestE
+}
+
+// heaviestCluster groups the columns with white pixels into clusters whose
+// members are at most gap apart and returns [start, end) of the one with
+// the most white pixels.
+func heaviestCluster(cols []int, gap int) (int, int) {
+	bestS, bestE, bestSum := 0, 0, 0
+	s, last, sum := -1, -1, 0
+	flush := func() {
+		if s >= 0 && sum > bestSum {
+			bestS, bestE, bestSum = s, last+1, sum
+		}
+	}
+	for x, c := range cols {
+		if c == 0 {
+			continue
+		}
+		if s >= 0 && x-last > gap {
+			flush()
+			s, sum = -1, 0
+		}
+		if s < 0 {
+			s = x
+		}
+		last = x
+		sum += c
+	}
+	flush()
+	return bestS, bestE
+}

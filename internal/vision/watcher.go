@@ -586,7 +586,6 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		if i >= len(layout.Slots) {
 			break
 		}
-		slot := layout.Slots[i]
 		// Regions as the detector used them (shifted for the winner's panel).
 		nameRect, charRect := Rect(b, s.NameRegion), Rect(b, s.CharRegion)
 		// The name tag identifies the human: learned hash first, OCR for a
@@ -623,7 +622,8 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		// rest learned once); an unknown digit is stashed for `learn`.
 		rank := s.Rank
 		if rank == 0 {
-			id := w.stash(KindRank, s.RankHash, img, Rect(b, slot.Rank))
+			_, _, rankRegion := SlotRegions(img, layout, i, false)
+			id := w.stash(KindRank, s.RankHash, img, Rect(b, rankRegion))
 			unknown = append(unknown, fmt.Sprintf("P%d 順位 → %s", s.Port, id))
 		}
 		if s.Inferred && s.RankHash != 0 {

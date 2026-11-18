@@ -551,13 +551,14 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		}
 		for i, s := range layout.Slots {
 			won := *winner == i+1
-			if err := save(fmt.Sprintf("p%d_char", s.Port), layout.CharRegion(i, won)); err != nil {
+			charR, nameR, rankR := vision.SlotRegions(img, layout, i, won)
+			if err := save(fmt.Sprintf("p%d_char", s.Port), charR); err != nil {
 				return err
 			}
-			if err := save(fmt.Sprintf("p%d_rank", s.Port), s.Rank); err != nil {
+			if err := save(fmt.Sprintf("p%d_rank", s.Port), rankR); err != nil {
 				return err
 			}
-			if err := save(fmt.Sprintf("p%d_name", s.Port), layout.NameRegion(i, won)); err != nil {
+			if err := save(fmt.Sprintf("p%d_name", s.Port), nameR); err != nil {
 				return err
 			}
 		}
@@ -607,7 +608,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 		}
 		fmt.Printf("results screen, %d players (%s), image %dx%d\n", r.Players, kind, img.Bounds().Dx(), img.Bounds().Dy())
 		for _, s := range r.Slots {
-			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d (dist %2d, glyph %016x)\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, s.RankDist, s.RankHash)
+			fmt.Printf("  P%d  name=%-12q (dist %2d)  char=%-16q (dist %2d)  rank=%d%s (dist %2d, glyph %016x)  caption at %.3f\n", s.Port, s.Name, s.NameDist, s.Char, s.CharDist, s.Rank, map[bool]string{true: " (inferred)"}[s.Inferred], s.RankDist, s.RankHash, s.CaptionTop)
 		}
 		if *withOCR {
 			eng, err := ocr.New(cfg.Vision.OCR)

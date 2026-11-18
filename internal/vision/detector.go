@@ -45,8 +45,9 @@ type SlotReading struct {
 	Char        string // character key, "" if unknown
 	CharDist    int
 	CharHash    uint64
-	Rank        int  // 0 if unknown
-	Inferred    bool // the numeral was unread and Rank is the one placement left over
+	Rank        int     // 0 if unknown
+	Inferred    bool    // the numeral was unread and Rank is the one placement left over
+	CaptionTop  float64 // where the caption's text was found (fraction of the frame height), -1 if not
 	RankDist    int
 	RankHash    uint64
 }
@@ -239,9 +240,10 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 		// who won tells where that panel's text sits. One unread numeral is
 		// inferred from the others before the text is read, so the winner's
 		// shifted regions are used even when the gold "1" itself was unread.
-		for _, slot := range layout.Slots {
-			sr := SlotReading{Port: slot.Port}
-			if sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, slot.Rank))); ok {
+		for i, slot := range layout.Slots {
+			sr := SlotReading{Port: slot.Port, CaptionTop: CaptionTop(img, layout, i)}
+			_, _, rankRegion := SlotRegions(img, layout, i, false)
+			if sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, rankRegion))); ok {
 				sr.RankHash = sig
 				if lbl, dist, ok := d.classifyRank(sig); ok {
 					sr.Rank, _ = strconv.Atoi(lbl)
@@ -258,8 +260,7 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 		for i := range r.Slots {
 			sr := &r.Slots[i]
 			sr.Winner = sr.Rank == 1
-			sr.CharRegion = layout.CharRegion(i, sr.Winner)
-			sr.NameRegion = layout.NameRegion(i, sr.Winner)
+			sr.CharRegion, sr.NameRegion, _ = SlotRegions(img, layout, i, sr.Winner)
 
 			sr.NameHash = TagHash(img, Rect(b, sr.NameRegion))
 			if lbl, dist, ok := d.classify(KindName, sr.NameHash, d.cfg.NameThreshold); ok {
@@ -336,7 +337,7 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 	if err := c.AddTemplate(KindBand, layout.ScreenLabel(), bh); err != nil {
 		return err
 	}
-	for i, slot := range layout.Slots {
+	for i := range layout.Slots {
 		// the winner's panel is enlarged: its caption and tag sit lower
 		winner := i < len(ranks) && strings.TrimSpace(ranks[i]) != "" && func() bool {
 			lbl, err := NormalizeLabel(KindRank, ranks[i])
@@ -347,7 +348,8 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 			if err != nil {
 				return err
 			}
-			if err := c.AddTemplate(KindChar, lbl, DHash(img, Rect(b, layout.CharRegion(i, winner)))); err != nil {
+			charRegion, _, _ := SlotRegions(img, layout, i, winner)
+			if err := c.AddTemplate(KindChar, lbl, DHash(img, Rect(b, charRegion))); err != nil {
 				return err
 			}
 		}
@@ -356,7 +358,8 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 			if err != nil {
 				return err
 			}
-			sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, slot.Rank)))
+			_, _, rankRegion := SlotRegions(img, layout, i, false)
+			sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, rankRegion)))
 			if !ok {
 				return fmt.Errorf("column %d: no numeral found in the rank region", i+1)
 			}
@@ -369,7 +372,8 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 			if err != nil {
 				return err
 			}
-			if err := c.AddTemplate(KindName, p.Name, TagHash(img, Rect(b, layout.NameRegion(i, winner)))); err != nil {
+			_, nameRegion, _ := SlotRegions(img, layout, i, winner)
+			if err := c.AddTemplate(KindName, p.Name, TagHash(img, Rect(b, nameRegion))); err != nil {
 				return err
 			}
 		}
