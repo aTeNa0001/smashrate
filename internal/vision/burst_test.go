@@ -303,3 +303,43 @@ func TestUnknownTagIsReadOnSeveralFrames(t *testing.T) {
 		t.Fatalf("the longest OCR reading across frames should name the player, got %q", ms[0].Entries[0].PlayerName)
 	}
 }
+
+// A results screen with a CPU column is recorded as an unrated match with
+// the CPU's character and placement, instead of being dropped.
+func TestCPUColumnIsRecordedUnrated(t *testing.T) {
+	c, w, _, msgs := setupBurst(t, 250*time.Millisecond)
+	f := frame(w.cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 99) // P2's tag is unknown
+	// teach P2's tag as a placeholder (what OCR does for コンピューター2)
+	_, name, _ := SlotRegions(f, w.cfg.Layouts[0], 1, false)
+	if err := c.AddTemplate(KindName, PlaceholderLabel, TagHash(f, Rect(f.Bounds(), name))); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Reload()
+	w.Process(f)
+	gone(w)
+	ms, _ := c.Matches(10, 0)
+	if len(ms) != 1 {
+		t.Fatalf("expected the CPU match to be recorded, got %d; msgs=%v", len(ms), *msgs)
+	}
+	m := ms[0]
+	if m.Rated {
+		t.Fatal("a match with a CPU must be unrated")
+	}
+	var cpu, human int
+	for _, e := range m.Entries {
+		if e.CPU {
+			cpu++
+			if e.Character != "link" || e.Rank != 2 {
+				t.Fatalf("the CPU's character and placement should be kept: %+v", e)
+			}
+		} else {
+			human++
+			if e.PlayerName != "Taro" || e.Rank != 1 {
+				t.Fatalf("human entry: %+v", e)
+			}
+		}
+	}
+	if cpu != 1 || human != 1 {
+		t.Fatalf("entries: %+v", m.Entries)
+	}
+}

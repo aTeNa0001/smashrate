@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	source     TEXT NOT NULL DEFAULT '', -- vision | manual | slack | web
 	note       TEXT NOT NULL DEFAULT '',
 	deleted    INTEGER NOT NULL DEFAULT 0,
+	rated      INTEGER NOT NULL DEFAULT 1, -- 0: a CPU took part; kept for the record, no rating
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_matches_played ON matches(played_at, id);
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS entries (
 	team         INTEGER NOT NULL,
 	rank         INTEGER NOT NULL,
 	port         INTEGER NOT NULL DEFAULT 0,
-	stocks       INTEGER
+	stocks       INTEGER,
+	cpu          INTEGER NOT NULL DEFAULT 0 -- a CPU fighter (player_id is the CPU pseudo-player)
 );
 CREATE INDEX IF NOT EXISTS idx_entries_match ON entries(match_id);
 CREATE INDEX IF NOT EXISTS idx_entries_player ON entries(player_id);

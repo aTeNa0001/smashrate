@@ -555,6 +555,7 @@ type apiEntry struct {
 	Rank      int    `json:"rank"`
 	Port      int    `json:"port,omitempty"`
 	Stocks    *int   `json:"stocks,omitempty"`
+	CPU       bool   `json:"cpu,omitempty"` // a computer fighter (player may be omitted)
 }
 
 type apiMatchIn struct {
@@ -635,7 +636,7 @@ func (s *Server) apiRecord(w http.ResponseWriter, r *http.Request) {
 		mi.PlayedAt = t
 	}
 	for _, e := range in.Entries {
-		mi.Entries = append(mi.Entries, core.EntryInput{Player: e.Player, Character: e.Character, Team: e.Team, Rank: e.Rank, Port: e.Port, Stocks: e.Stocks})
+		mi.Entries = append(mi.Entries, core.EntryInput{Player: e.Player, Character: e.Character, Team: e.Team, Rank: e.Rank, Port: e.Port, Stocks: e.Stocks, CPU: e.CPU})
 	}
 	m, err := s.core.RecordMatch(mi)
 	if err != nil {

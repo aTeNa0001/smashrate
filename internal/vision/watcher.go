@@ -623,11 +623,14 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 				newcomers = append(newcomers, name)
 			}
 		}
+		cpu := false
 		if placeholder {
+			// a CPU (or a human without a name tag): kept in the record as
+			// the CPU pseudo-player with its character and placement; the
+			// match is then not rated
 			placeholders = append(placeholders, s.Port)
-			continue
-		}
-		if name == "" {
+			name, cpu = core.CPUName, true
+		} else if name == "" {
 			unidentified = append(unidentified, s.Port)
 			id := w.stash(KindName, s.NameHash, img, nameRect)
 			unknown = append(unknown, fmt.Sprintf("P%d 名前タグ → %s", s.Port, id))
@@ -656,7 +659,7 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 			// others: remember the shape so it is read directly next time
 			w.learn(KindRank, strconv.Itoa(rank), s.RankHash)
 		}
-		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: rank, Character: char})
+		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: rank, Character: char, CPU: cpu})
 	}
 
 	// Team battle and free-for-all share the same results screen; what tells
@@ -685,17 +688,9 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 
 	var msg []string
 	if len(placeholders) > 0 {
-		// CPU fighters or humans without a name tag: never rate such a match.
-		// say what was read, so the people in it can be told from the log
-		var read []string
-		for _, e := range in.Entries {
-			read = append(read, describeEntry(e))
-		}
-		for _, p := range placeholders {
-			read = append(read, fmt.Sprintf("P%d CPU/タグ未設定", p))
-		}
-		w.note(fmt.Sprintf("列 %v が CPU か名前タグ未設定のため、この試合は記録しません（読み取り: %s）。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders, strings.Join(read, ", ")))
-		return
+		// CPU fighters or humans without a name tag: the match is kept for
+		// the record (see core.Rated) but moves nobody's rating
+		msg = append(msg, fmt.Sprintf("列 %v は CPU か名前タグ未設定なので、この試合はレート対象外として記録します。人同士の試合は本体の「名前」で各自の名前を選んでください。", placeholders))
 	}
 	if len(newcomers) > 0 {
 		msg = append(msg, fmt.Sprintf("新しいプレイヤーを登録しました: %s（読み間違いなら `rename <今の名前> <正しい名前>`、既存の人なら `merge <今の名前> <既存の名前>`）", strings.Join(newcomers, ", ")))
@@ -720,7 +715,11 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 		if err != nil {
 			msg = append(msg, "自動記録に失敗: "+err.Error())
 		} else {
-			msg = append(msg, "自動記録しました "+describe(*m))
+			if m.Rated {
+				msg = append(msg, "自動記録しました "+describe(*m))
+			} else {
+				msg = append(msg, "CPU 戦として記録しました（レート対象外） "+describe(*m))
+			}
 		}
 	} else if len(unidentified) == 0 {
 		msg = append(msg, "順位が読めなかったため記録していません。手動で `record` してください。")
@@ -898,18 +897,6 @@ func (w *Watcher) TeachScreen(players int, mode string) error {
 	}
 	w.forgetLastSeen()
 	return w.det.Reload(w.core)
-}
-
-// describeEntry is "P1 名前(キャラ) 2位" for a reading that is not recorded.
-func describeEntry(e core.EntryInput) string {
-	s := fmt.Sprintf("P%d %s", e.Port, e.Player)
-	if ch, ok := characters.ByKey(e.Character); ok {
-		s += "(" + ch.NameJA + ")"
-	}
-	if e.Rank > 0 {
-		s += fmt.Sprintf(" %d位", e.Rank)
-	}
-	return s
 }
 
 // keepFrame saves the frame a results screen was read from under

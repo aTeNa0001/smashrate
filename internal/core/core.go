@@ -57,7 +57,44 @@ func Open(path string) (*Core, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	// columns added after the first release (CREATE TABLE IF NOT EXISTS
+	// leaves an existing table alone)
+	for _, m := range []struct{ table, column, ddl string }{
+		{"matches", "rated", "ALTER TABLE matches ADD COLUMN rated INTEGER NOT NULL DEFAULT 1"},
+		{"entries", "cpu", "ALTER TABLE entries ADD COLUMN cpu INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := addColumn(db, m.table, m.column, m.ddl); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrate %s.%s: %w", m.table, m.column, err)
+		}
+	}
 	return &Core{db: db}, nil
+}
+
+// addColumn runs ddl unless table already has column.
+func addColumn(db *sql.DB, table, column, ddl string) error {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.Exec(ddl)
+	return err
 }
 
 // Close releases the database.
@@ -221,7 +258,7 @@ func (c *Core) MergePlayers(from, to string) error {
 
 // Players lists every player alphabetically.
 func (c *Core) Players() ([]Player, error) {
-	rows, err := c.db.Query(`SELECT id, name, slack_id, created_at FROM players ORDER BY name COLLATE NOCASE`)
+	rows, err := c.db.Query(`SELECT id, name, slack_id, created_at FROM players WHERE name <> ? ORDER BY name COLLATE NOCASE`, CPUName)
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +286,36 @@ type EntryInput struct {
 	Rank      int    // placement of this player's team: 1 = winner. Ties share a rank.
 	Port      int    // controller port 1-4, 0 if unknown
 	Stocks    *int   // stocks remaining, optional
+	// CPU marks a computer fighter. Its name is ignored (the CPU
+	// pseudo-player is used); a match with any CPU is kept for the record
+	// but never rated.
+	CPU bool
+}
+
+// CPUName is the pseudo-player every CPU fighter is recorded as. An entry
+// whose player is this name (typed on the record form, or sent by the API)
+// is a CPU fighter.
+const CPUName = "CPU"
+
+func markCPUs(entries []EntryInput) []EntryInput {
+	out := make([]EntryInput, len(entries))
+	for i, e := range entries {
+		if strings.EqualFold(strings.TrimSpace(e.Player), CPUName) {
+			e.CPU = true
+		}
+		out[i] = e
+	}
+	return out
+}
+
+// Rated reports whether a match with these entries counts for ratings.
+func Rated(entries []EntryInput) bool {
+	for _, e := range entries {
+		if e.CPU {
+			return false
+		}
+	}
+	return true
 }
 
 // MatchInput is a match to record.
@@ -270,6 +337,7 @@ type Entry struct {
 	Rank       int
 	Port       int
 	Stocks     *int
+	CPU        bool // a computer fighter
 	// Rating movement in the overall scope, filled by MatchByID / Matches.
 	DisplayBefore int
 	DisplayAfter  int
@@ -290,6 +358,7 @@ type Match struct {
 	Mode     string
 	Source   string
 	Note     string
+	Rated    bool // false: a CPU took part; the match is kept but does not move ratings
 	Entries  []Entry
 }
 
@@ -341,13 +410,22 @@ func validate(in MatchInput) error {
 	}
 	seen := map[string]bool{}
 	teamRank := map[int]int{}
+	humans := 0
 	for _, e := range in.Entries {
 		name := strings.ToLower(strings.TrimSpace(e.Player))
-		if name == "" {
-			return errors.New("empty player name")
-		}
-		if seen[name] {
-			return fmt.Errorf("player %q appears twice", e.Player)
+		if e.CPU {
+			name = strings.ToLower(CPUName)
+		} else {
+			humans++
+			if name == "" {
+				return errors.New("empty player name")
+			}
+			if name == strings.ToLower(CPUName) {
+				return fmt.Errorf("%q is reserved for computer fighters", e.Player)
+			}
+			if seen[name] {
+				return fmt.Errorf("player %q appears twice", e.Player)
+			}
 		}
 		seen[name] = true
 		if e.Team < 1 {
@@ -360,6 +438,9 @@ func validate(in MatchInput) error {
 			return fmt.Errorf("team %d has inconsistent ranks", e.Team)
 		}
 		teamRank[e.Team] = e.Rank
+	}
+	if humans == 0 {
+		return errors.New("a match needs at least one human player")
 	}
 	if len(teamRank) < 2 {
 		return errors.New("a match needs at least two teams")
@@ -381,6 +462,7 @@ func validate(in MatchInput) error {
 
 // RecordMatch stores a match and applies every rating update.
 func (c *Core) RecordMatch(in MatchInput) (*Match, error) {
+	in.Entries = markCPUs(in.Entries)
 	if err := validate(in); err != nil {
 		return nil, err
 	}
@@ -395,30 +477,23 @@ func (c *Core) RecordMatch(in MatchInput) (*Match, error) {
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`INSERT INTO matches(played_at, mode, source, note, created_at) VALUES(?,?,?,?,?)`,
-		in.PlayedAt.UTC().Format(time.RFC3339), mode, in.Source, in.Note, now())
+	rated := Rated(in.Entries)
+	res, err := tx.Exec(`INSERT INTO matches(played_at, mode, source, note, rated, created_at) VALUES(?,?,?,?,?,?)`,
+		in.PlayedAt.UTC().Format(time.RFC3339), mode, in.Source, in.Note, rated, now())
 	if err != nil {
 		return nil, err
 	}
 	matchID, _ := res.LastInsertId()
 
-	for _, e := range in.Entries {
-		p, err := getOrCreatePlayerTx(tx, e.Player)
-		if err != nil {
+	if err := insertEntries(tx, matchID, in.Entries); err != nil {
+		return nil, err
+	}
+	if !rated {
+		// kept for the record (who played what against which CPU), no rating
+		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
-		charKey := ""
-		if strings.TrimSpace(e.Character) != "" {
-			ch, ok := characters.Resolve(e.Character)
-			if !ok {
-				return nil, fmt.Errorf("unknown character %q", e.Character)
-			}
-			charKey = ch.Key
-		}
-		if _, err := tx.Exec(`INSERT INTO entries(match_id, player_id, character, team, rank, port, stocks) VALUES(?,?,?,?,?,?,?)`,
-			matchID, p.ID, charKey, e.Team, e.Rank, e.Port, e.Stocks); err != nil {
-			return nil, err
-		}
+		return c.MatchByID(matchID)
 	}
 	// Ratings are applied in match order (played_at). A match that is not
 	// the newest one (recorded with an earlier played_at, or the clock went
@@ -426,7 +501,7 @@ func (c *Core) RecordMatch(in MatchInput) (*Match, error) {
 	// instead, exactly as an edit or a deletion does, so that the ratings
 	// never depend on the order matches were typed in.
 	var later int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM matches WHERE deleted = 0 AND id <> ? AND played_at > ?`,
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM matches WHERE deleted = 0 AND rated = 1 AND id <> ? AND played_at > ?`,
 		matchID, in.PlayedAt.UTC().Format(time.RFC3339)).Scan(&later); err != nil {
 		return nil, err
 	}
@@ -593,7 +668,7 @@ func recompute(tx *sql.Tx) error {
 	if _, err := tx.Exec(`DELETE FROM rating_history`); err != nil {
 		return err
 	}
-	rows, err := tx.Query(`SELECT id FROM matches WHERE deleted = 0 ORDER BY played_at, id`)
+	rows, err := tx.Query(`SELECT id FROM matches WHERE deleted = 0 AND rated = 1 ORDER BY played_at, id`)
 	if err != nil {
 		return err
 	}
@@ -646,6 +721,7 @@ func (c *Core) DeleteMatch(id int64) error {
 // UpdateMatch replaces a match's participants (players, characters, teams,
 // ranks) and optionally its note, then recomputes every rating.
 func (c *Core) UpdateMatch(id int64, in MatchInput) error {
+	in.Entries = markCPUs(in.Entries)
 	if err := validate(in); err != nil {
 		return err
 	}
@@ -661,7 +737,7 @@ func (c *Core) UpdateMatch(id int64, in MatchInput) error {
 	if deleted != 0 {
 		return fmt.Errorf("match %d is deleted", id)
 	}
-	if _, err := tx.Exec(`UPDATE matches SET mode = ?, note = ? WHERE id = ?`, DetectMode(in.Entries), in.Note, id); err != nil {
+	if _, err := tx.Exec(`UPDATE matches SET mode = ?, note = ?, rated = ? WHERE id = ?`, DetectMode(in.Entries), in.Note, Rated(in.Entries), id); err != nil {
 		return err
 	}
 	if !in.PlayedAt.IsZero() {
@@ -672,23 +748,8 @@ func (c *Core) UpdateMatch(id int64, in MatchInput) error {
 	if _, err := tx.Exec(`DELETE FROM entries WHERE match_id = ?`, id); err != nil {
 		return err
 	}
-	for _, e := range in.Entries {
-		p, err := getOrCreatePlayerTx(tx, e.Player)
-		if err != nil {
-			return err
-		}
-		charKey := ""
-		if strings.TrimSpace(e.Character) != "" {
-			ch, ok := characters.Resolve(e.Character)
-			if !ok {
-				return fmt.Errorf("unknown character %q", e.Character)
-			}
-			charKey = ch.Key
-		}
-		if _, err := tx.Exec(`INSERT INTO entries(match_id, player_id, character, team, rank, port, stocks) VALUES(?,?,?,?,?,?,?)`,
-			id, p.ID, charKey, e.Team, e.Rank, e.Port, e.Stocks); err != nil {
-			return err
-		}
+	if err := insertEntries(tx, id, in.Entries); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -749,7 +810,7 @@ func (c *Core) MatchesForPlayer(playerID int64, limit int) ([]Match, error) {
 }
 
 func (c *Core) loadMatches(where string, args ...any) ([]Match, error) {
-	rows, err := c.db.Query(`SELECT m.id, m.played_at, m.mode, m.source, m.note FROM matches m `+where, args...)
+	rows, err := c.db.Query(`SELECT m.id, m.played_at, m.mode, m.source, m.note, m.rated FROM matches m `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -757,7 +818,7 @@ func (c *Core) loadMatches(where string, args ...any) ([]Match, error) {
 	for rows.Next() {
 		var m Match
 		var played string
-		if err := rows.Scan(&m.ID, &played, &m.Mode, &m.Source, &m.Note); err != nil {
+		if err := rows.Scan(&m.ID, &played, &m.Mode, &m.Source, &m.Note, &m.Rated); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -777,7 +838,7 @@ func (c *Core) loadMatches(where string, args ...any) ([]Match, error) {
 
 func (c *Core) entriesFor(matchID int64) ([]Entry, error) {
 	rows, err := c.db.Query(`
-		SELECT e.id, e.match_id, e.player_id, p.name, e.character, e.team, e.rank, e.port, e.stocks,
+		SELECT e.id, e.match_id, e.player_id, p.name, e.character, e.team, e.rank, e.port, e.stocks, e.cpu,
 		       COALESCE(h.mu_before, 0), COALESCE(h.sigma_before, 0), COALESCE(h.mu_after, 0), COALESCE(h.sigma_after, 0)
 		FROM entries e
 		JOIN players p ON p.id = e.player_id
@@ -792,7 +853,7 @@ func (c *Core) entriesFor(matchID int64) ([]Entry, error) {
 		var e Entry
 		var stocks sql.NullInt64
 		var mb, sb, ma, sa float64
-		if err := rows.Scan(&e.ID, &e.MatchID, &e.PlayerID, &e.PlayerName, &e.Character, &e.Team, &e.Rank, &e.Port, &stocks, &mb, &sb, &ma, &sa); err != nil {
+		if err := rows.Scan(&e.ID, &e.MatchID, &e.PlayerID, &e.PlayerName, &e.Character, &e.Team, &e.Rank, &e.Port, &stocks, &e.CPU, &mb, &sb, &ma, &sa); err != nil {
 			return nil, err
 		}
 		if stocks.Valid {
@@ -1140,4 +1201,34 @@ func (c *Core) Templates(kind string) ([]Template, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// insertEntries stores a match's participants. A CPU fighter is recorded
+// under the CPU pseudo-player with its character and placement, so a
+// match against the computer is kept (who played what, who won) without
+// anyone being rated for it.
+func insertEntries(tx *sql.Tx, matchID int64, entries []EntryInput) error {
+	for _, e := range entries {
+		name := e.Player
+		if e.CPU {
+			name = CPUName
+		}
+		p, err := getOrCreatePlayerTx(tx, name)
+		if err != nil {
+			return err
+		}
+		charKey := ""
+		if strings.TrimSpace(e.Character) != "" {
+			ch, ok := characters.Resolve(e.Character)
+			if !ok {
+				return fmt.Errorf("unknown character %q", e.Character)
+			}
+			charKey = ch.Key
+		}
+		if _, err := tx.Exec(`INSERT INTO entries(match_id, player_id, character, team, rank, port, stocks, cpu) VALUES(?,?,?,?,?,?,?,?)`,
+			matchID, p.ID, charKey, e.Team, e.Rank, e.Port, e.Stocks, e.CPU); err != nil {
+			return err
+		}
+	}
+	return nil
 }

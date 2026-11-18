@@ -346,7 +346,7 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	feed(w, frame(cfg, 2, []int64{12, 11}, []int64{21, 22}, 42, 41)) // seats swapped, Hanako (now P1) wins
 	ms, _ = c.Matches(10, 0)
 	if len(ms) != 2 || ms[0].Entries[0].PlayerName != "Hanako" || ms[0].Entries[0].Rank != 1 || ms[0].Entries[1].PlayerName != "たろう" {
-		t.Fatalf("second match: %+v", ms[0].Entries)
+		t.Fatalf("second match: %+v; msgs=%v", ms[0].Entries, msgs)
 	}
 	if fake.calls != ocrCalls {
 		t.Fatalf("hash templates should have avoided OCR, calls=%d", fake.calls)
@@ -368,8 +368,9 @@ func TestOCRRegistersNewcomersOnce(t *testing.T) {
 	cr := Crop(f4, Rect(f4.Bounds(), l4.Slots[1].Name))
 	fake.byHash[DHash(cr, cr.Bounds())] = "P 2"
 	feed(w, f4)
-	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
-		t.Fatal("placeholder tag must block recording")
+	ms, _ = c.Matches(10, 0)
+	if len(ms) != 3 || ms[0].Rated || !ms[0].Entries[1].CPU {
+		t.Fatalf("a placeholder tag records an unrated match with a CPU entry: %+v", ms)
 	}
 	if _, err := c.PlayerByName("P2"); err == nil {
 		t.Fatal("placeholder tag must not create a player")
@@ -430,14 +431,15 @@ func TestOCRLearnsCharactersRanksAndSkipsCPUs(t *testing.T) {
 		t.Fatal("second identical screen should record again after cooldown reset")
 	}
 
-	// a CPU opponent: the tag reads コンピューター2, nothing is recorded or stashed
+	// a CPU opponent: the tag reads コンピューター2; the match is kept for the
+	// record as unrated, nothing is stashed
 	f2 := frame(cfg, 2, []int64{11, 12}, []int64{21, 22}, 41, 77)
 	fake.byHash[hashOf(f2, layout.Slots[1].Name)] = "コ ン ピ ュ ー タ ー 2"
 	var msgs []string
 	w.notify = func(s string) { msgs = append(msgs, s) }
 	feed(w, f2)
-	if ms, _ = c.Matches(10, 0); len(ms) != 2 {
-		t.Fatal("match with a CPU must not be recorded")
+	if ms, _ = c.Matches(10, 0); len(ms) != 3 || ms[0].Rated {
+		t.Fatalf("match with a CPU must be recorded unrated: %+v", ms)
 	}
 	if len(w.Pending()) != 0 || len(msgs) != 1 || !strings.Contains(msgs[0], "CPU") {
 		t.Fatalf("cpu handling: pending=%v msgs=%v", w.Pending(), msgs)

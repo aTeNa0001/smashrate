@@ -358,6 +358,9 @@ func history(c *core.Core, args []string) error {
 	}
 	for _, m := range ms {
 		fmt.Printf("#%d %s [%s]", m.ID, m.PlayedAt.Local().Format("2006-01-02 15:04"), m.Mode)
+		if !m.Rated {
+			fmt.Print(" (CPU戦・レート対象外)")
+		}
 		for _, e := range m.Entries {
 			fmt.Printf("  %d:%s", e.Rank, e.PlayerName)
 			if e.Character != "" {

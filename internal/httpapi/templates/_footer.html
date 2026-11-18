@@ -3,4 +3,4 @@
 </body>
 </html>
 {{end}}
-{{define "entries"}}{{range .}}<span><span class="port port{{.Port}}">{{if .Port}}P{{.Port}}{{else}}·{{end}}</span><a href="/players/{{.PlayerName}}" {{if eq .Rank 1}}class="win"{{end}}>{{.PlayerName}}</a>{{if .Character}} <span class="muted">{{.CharacterName}}</span>{{end}} <span class="muted">{{.Rank}}位</span> {{with delta .}}<span class="{{if hasPrefix . "+"}}up{{else}}down{{end}}">{{.}}</span>{{end}}</span><br>{{end}}{{end}}
+{{define "entries"}}{{range .}}<span><span class="port port{{.Port}}">{{if .Port}}P{{.Port}}{{else}}·{{end}}</span>{{if .CPU}}<span {{if eq .Rank 1}}class="win"{{end}}>CPU</span>{{else}}<a href="/players/{{.PlayerName}}" {{if eq .Rank 1}}class="win"{{end}}>{{.PlayerName}}</a>{{end}}{{if .Character}} <span class="muted">{{.CharacterName}}</span>{{end}} <span class="muted">{{.Rank}}位</span> {{with delta .}}<span class="{{if hasPrefix . "+"}}up{{else}}down{{end}}">{{.}}</span>{{end}}</span><br>{{end}}{{end}}
