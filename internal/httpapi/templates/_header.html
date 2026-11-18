@@ -54,7 +54,12 @@ canvas { width:100%; height:auto; background:var(--surface); border:1px solid va
   <a href="/learn" {{if eq .Page "learn"}}class="on"{{end}}>学習</a>
   <a href="/players" {{if eq .Page "players"}}class="on"{{end}}>プレイヤー</a>
   <a href="/status" {{if eq .Page "status"}}class="on"{{end}}>状態</a>
-  {{if .AuthEnabled}}<span style="margin-left:auto">{{if .LoggedIn}}<form method="post" action="/logout" style="display:inline"><button class="ghost" type="submit">ログアウト</button></form>{{else}}<a href="/login">ログイン</a>{{end}}</span>{{end}}
+  <span style="margin-left:auto;display:inline-flex;gap:10px;align-items:center">
+    <span class="muted" id="loaded-at" title="このページを読み込んだ時刻"></span>
+    <button class="ghost" type="button" onclick="location.reload()" title="最新の記録を読み込み直す">更新</button>
+    {{if .AuthEnabled}}{{if .LoggedIn}}<form method="post" action="/logout" style="display:inline"><button class="ghost" type="submit">ログアウト</button></form>{{else}}<a href="/login">ログイン</a>{{end}}{{end}}
+  </span>
+  <script>(function(){var d=new Date(),p=function(n){return(n<10?"0":"")+n};var e=document.getElementById("loaded-at");if(e)e.textContent=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+" 時点";})();</script>
 </nav>
 <main>
 {{end}}

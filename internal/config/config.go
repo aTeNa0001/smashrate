@@ -164,7 +164,7 @@ func Default() Config {
 			// OCR misreads kana below ~30 px (360p renders them at 12 px).
 			Width: 1920, Height: 1080, FPS: 6, StableFrames: 1, SettleSeconds: 1.5, CooldownSeconds: 90,
 			IdleAfterSeconds: 300, IdlePollSeconds: 30,
-			ScreenThreshold: 6, BandThreshold: 14, CharThreshold: 12, RankThreshold: 6, NameThreshold: 6,
+			ScreenThreshold: 6, BandThreshold: 14, CharThreshold: 4, RankThreshold: 6, NameThreshold: 6,
 			OCR:     ocr.Config{Engine: "auto", Language: "ja", Scale: 3, TimeoutSeconds: 15},
 			Layouts: defaultLayouts(),
 		},

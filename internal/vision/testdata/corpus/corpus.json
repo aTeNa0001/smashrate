@@ -151,5 +151,16 @@
       {"port": 6, "name": "", "cpu": true, "char": "kirby", "rank": 2},
       {"port": 7, "name": "", "cpu": true, "char": "zero_suit_samus", "rank": 3}
     ]
+  },
+  {
+    "file": "results-3p-humans.jpg",
+    "note": "first 3-player results page at 1080p, three humans (2026-11-18 22:34). Its captions were matched to the wrong characters (SEPHIROTH as Byleth, HERO as Fox) with the old threshold of 12",
+    "players": 3,
+    "name_by_hash_optional": true,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "lucina", "rank": 3},
+      {"port": 2, "name": "ぎんぴか", "char": "sephiroth", "rank": 1},
+      {"port": 3, "name": "レンジでチンたなはわ", "char": "hero", "rank": 2}
+    ]
   }
 ]

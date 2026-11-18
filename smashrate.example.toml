@@ -64,7 +64,7 @@ idle_poll_seconds = 30
 # the stat-row band across the frame (band, which tells the player count).
 screen_threshold = 6
 band_threshold = 14
-char_threshold = 12
+char_threshold = 4
 rank_threshold = 6    # placement numerals are matched by shape; digits 1-7 are built in
 name_threshold = 6
 

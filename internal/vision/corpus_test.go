@@ -166,3 +166,62 @@ func checkSequences(t *testing.T, frames []corpusFrame, seqName, seqChar map[str
 		}
 	}
 }
+
+// A caption is never named as the wrong character: with captions learned
+// from every other frame of the corpus (other layouts, other panel
+// colours), each frame's captions read either correctly or not at all
+// (and are then read by OCR live). Brightness hashes of a caption are
+// 12-40 bits apart for the same character across layouts and as little as
+// 14 apart for different ones, so only a near-exact match may be trusted.
+func TestCorpusNeverNamesTheWrongCharacter(t *testing.T) {
+	frames := loadCorpus(t)
+	cfg := config.Default().Vision
+	for k, f := range frames {
+		if f.Page == PageReady {
+			continue
+		}
+		c, err := core.Open(":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for j, o := range frames {
+			if j == k || o.File == f.File || o.Page == PageReady || (o.Sequence != "" && o.Sequence == f.Sequence) {
+				continue
+			}
+			img, _ := OpenFiles(filepath.Join("testdata", "corpus", o.File)).Next()
+			var chars, ranks []string
+			for _, s := range o.Slots {
+				chars = append(chars, s.Char)
+				ranks = append(ranks, itoa(s.Rank))
+			}
+			page := o.Page
+			if page == "" {
+				page = PageResults
+			}
+			if err := TeachPage(c, cfg, img, o.Players, "", page, chars, ranks, nil); err != nil {
+				t.Fatalf("%s: %v", o.File, err)
+			}
+		}
+		img, _ := OpenFiles(filepath.Join("testdata", "corpus", f.File)).Next()
+		// the screen itself must be recognised: teach this frame's screen only
+		page := f.Page
+		if page == "" {
+			page = PageResults
+		}
+		if err := TeachPage(c, cfg, img, f.Players, "", page, nil, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		det, _ := NewDetector(cfg, c)
+		r, ok := det.Detect(img)
+		c.Close()
+		if !ok {
+			t.Errorf("%s: not recognised", f.File)
+			continue
+		}
+		for i, s := range f.Slots {
+			if got := r.Slots[i].Char; got != "" && got != s.Char {
+				t.Errorf("%s P%d: caption read as %q, it is %q (dist %d)", f.File, s.Port, got, s.Char, r.Slots[i].CharDist)
+			}
+		}
+	}
+}
