@@ -150,3 +150,9 @@ smashrate vision teach -image shot.png -players 2 -chars マリオ,リンク -ra
   `engine = "command"` で RapidOCR 等に差し替える。
 - キャプチャボードの出力解像度や HDMI の色域が変わると、既存テンプレートとの距離が広がる。
   `vision test` の距離が閾値付近なら、新しい環境で `teach` し直す（古いテンプレートはそのまま残してよい）。
+
+## 検証の仕組み（2026-11-18 以降）
+
+- **録画**: リザルト画面と判定した表示は `data/bursts/<時刻>/` にフレーム単位（JPEG）で保存され、`burst.log` に各フレームの読み取りと最終判断が残る（直近 40 回分）。
+- **再生**: `smashrate vision replay [dir ...]` は保存したフレームを検出器に通し、何を記録したはずかを表示する（記録はしない）。セッション後に全試合をこれで照合する。
+- **回帰コーパス**: `internal/vision/testdata/corpus/` に実機フレームと期待する読み取り（corpus.json）を置き、`TestCorpusFramesAreReadCorrectly` が全フレームの認識・順位・キャラ・名前タグ（別フレーム・別レイアウトで学習したテンプレートからの同定）を検査する。実機で問題が出たフレームは必ずここに追加する。

@@ -1,0 +1,31 @@
+[
+  {
+    "file": "results-2p-wiifit-koopa.jpg",
+    "note": "settled screen, players stopped on it (2026-11-17)",
+    "players": 2,
+    "slots": [
+      {"port": 1, "name": "ゆげどおしをまたあか", "char": "wii_fit_trainer", "rank": 2},
+      {"port": 2, "name": "ぎんぴか", "char": "bowser", "rank": 1}
+    ]
+  },
+  {
+    "file": "results-4p-minmin-sephiroth-cpu-cpu.jpg",
+    "note": "settled 4-player screen with two CPUs (2026-11-17)",
+    "players": 4,
+    "slots": [
+      {"port": 1, "name": "ゆげどおしをまたあか", "char": "min_min", "rank": 1},
+      {"port": 2, "name": "ぎんぴか", "char": "sephiroth", "rank": 4},
+      {"port": 3, "name": "", "cpu": true, "char": "pyra_mythra", "rank": 3},
+      {"port": 4, "name": "", "cpu": true, "char": "young_link", "rank": 2}
+    ]
+  },
+  {
+    "file": "results-2p-skipped-marth-cpu.jpg",
+    "note": "skipped at once: headers still sliding in, sparkle on the winner's tag (2026-11-18 16:22)",
+    "players": 2,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "marth", "rank": 1},
+      {"port": 2, "name": "", "cpu": true, "char": "yoshi", "rank": 2}
+    ]
+  }
+]
