@@ -664,7 +664,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 					names = append(names, fmt.Sprintf("%q", ocr.NormalizeName(t)))
 				}
 				for _, v := range ocr.Variants(vision.Crop(img, vision.Rect(b, slot.CharRegion))) {
-					t, _ := eng.Recognize(v)
+					t, _ := recognizeCaption(eng, v)
 					key, _ := ocr.MatchCharacter(t)
 					caps = append(caps, fmt.Sprintf("%q→%s", ocr.NormalizeJoined(t), key))
 				}
@@ -753,4 +753,13 @@ func splitCSV(s string) []string {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 	return parts
+}
+
+// recognizeCaption reads a fighter caption with the English OCR model when
+// the engine supports languages, as the watcher does.
+func recognizeCaption(eng ocr.Engine, img image.Image) (string, error) {
+	if le, ok := eng.(ocr.LangEngine); ok {
+		return le.RecognizeLang(img, "en")
+	}
+	return eng.Recognize(img)
 }

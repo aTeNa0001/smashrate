@@ -36,3 +36,34 @@ func TestPlausibleName(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchNameFoldsWhatSmallTagsLose(t *testing.T) {
+	known := []string{"ぎんぴか", "つゆだく", "はるか", "レンジでチンたなはわ", "ゆげどおしをまたあか"}
+	for text, want := range map[string]string{
+		"きんひか": "ぎんぴか", "つゆたく": "つゆだく", "っゆだく": "つゆだく",
+		"ゆけとおしをまたあか": "ゆげどおしをまたあか", "レンシでチンたなはわ": "レンジでチンたなはわ",
+	} {
+		if got := MatchName(text, known); got != want {
+			t.Errorf("%q: got %q, want %q", text, got, want)
+		}
+	}
+	if got := MatchName("たろう", known); got != "" {
+		t.Errorf("a different name must not match: %q", got)
+	}
+}
+
+// Readings OCR made of the narrow 7- and 8-player captions on 2026-11-18:
+// the garbled ones must not be matched to anyone, the merely misspelt ones
+// still must be.
+func TestMatchCharacterRejectsGarbledCaptions(t *testing.T) {
+	for _, s := range []string{"◎R", "AC", "A◎", "Rー◎", "町礼EMAC", "盟U盟引す", "2E55", "uNK", "JS◎RA"} {
+		if got, ok := MatchCharacter(s); ok {
+			t.Errorf("%q matched %q; a garbled reading must not name a fighter", s, got)
+		}
+	}
+	for s, want := range map[string]string{"SEPHIRTH": "sephiroth", "PONKEVKONG": "donkey_kong", "DADSY": "daisy", "SAMUSj": "samus", "WiiFitTRAINERI": "wii_fit_trainer", "IKAZUYAI": "kazuya", `\@EACH`: "peach", "sORA": "sora"} {
+		if got, ok := MatchCharacter(s); !ok || got != want {
+			t.Errorf("%q: got %q (%v), want %q", s, got, ok, want)
+		}
+	}
+}

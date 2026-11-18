@@ -102,28 +102,41 @@ func MatchCharacter(text string) (string, bool) {
 	if ch, ok := characters.Resolve(joined); ok {
 		return ch.Key, true
 	}
+	// captions are all letters: digits are misread letters (F0X, 5ORA)
+	joined = digitsAsLetters.Replace(joined)
+	if ch, ok := characters.Resolve(joined); ok {
+		return ch.Key, true
+	}
 	// Fighter captions come from a closed list (English names plus the
 	// Japanese market's spellings kept as aliases), so a third of the
 	// characters may be misread and the nearest name still wins.
-	best, bestDist := "", 1<<30
+	// A fuzzy match needs a reading of four or more characters, at most a
+	// third of them wrong, and no other fighter as close: a garbled
+	// two-letter fragment ("◎R", "AC" off the narrow panels) used to be
+	// matched to whichever short name was nearest.
+	n := len([]rune(joined))
+	if n < 4 {
+		return "", false
+	}
+	best, bestDist, second := "", 1<<30, 1<<30
 	for _, c := range characters.All {
 		cands := append([]string{c.NameEN}, c.Aliases...)
+		d := 1 << 30
 		for _, cand := range cands {
-			if !isASCII(cand) {
-				continue
-			}
-			d := Levenshtein(joined, NormalizeName(cand))
-			if d < bestDist {
-				best, bestDist = c.Key, d
+			if isASCII(cand) {
+				d = min(d, Levenshtein(joined, NormalizeName(cand)))
 			}
 		}
+		switch {
+		case d < bestDist:
+			second = bestDist
+			best, bestDist = c.Key, d
+		case d < second:
+			second = d
+		}
 	}
-	n := len([]rune(joined))
-	allowed := n / 3
-	if allowed < 1 {
-		allowed = 1
-	}
-	if best != "" && bestDist <= allowed {
+	allowed := max(1, n/3)
+	if best != "" && bestDist <= allowed && second > bestDist {
 		return best, true
 	}
 	return "", false
@@ -234,8 +247,12 @@ func MatchName(text string, candidates []string) string {
 		return ""
 	}
 	best, bestDist := "", 1<<30
+	folded := FoldKana(text)
 	for _, c := range candidates {
-		d := Levenshtein(text, NormalizeName(c))
+		cn := NormalizeName(c)
+		// the small name tags lose dakuten and turn つ into っ: compare the
+		// folded forms too
+		d := min(Levenshtein(text, cn), Levenshtein(folded, FoldKana(cn)))
 		if d < bestDist {
 			best, bestDist = c, d
 		}
@@ -273,3 +290,26 @@ func PlausibleName(s string) bool {
 	}
 	return true
 }
+
+var kanaFolder = func() *strings.Replacer {
+	voiced := "がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポヴ"
+	plain := "かきくけこさしすせそたちつてとはひふへほはひふへほカキクケコサシスセソタチツテトハヒフヘホハヒフヘホウ"
+	small := "ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ"
+	large := "あいうえおつやゆよわアイウエオツヤユヨワ"
+	var pairs []string
+	vr, pr := []rune(voiced), []rune(plain)
+	for i := range vr {
+		pairs = append(pairs, string(vr[i]), string(pr[i]))
+	}
+	sr, lr := []rune(small), []rune(large)
+	for i := range sr {
+		pairs = append(pairs, string(sr[i]), string(lr[i]))
+	}
+	return strings.NewReplacer(pairs...)
+}()
+
+// FoldKana removes what OCR most often loses on a small name tag: dakuten
+// and handakuten (ぎ→き, ぴ→ひ) and the small kana (っ→つ).
+func FoldKana(s string) string { return kanaFolder.Replace(s) }
+
+var digitsAsLetters = strings.NewReplacer("0", "O", "1", "I", "2", "Z", "5", "S", "6", "G", "8", "B")

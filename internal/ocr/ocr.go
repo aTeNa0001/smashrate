@@ -102,11 +102,40 @@ func prepare(img image.Image, scale int) image.Image {
 // Variants returns the images to try, in order, when reading a label:
 // the smooth 4x enlargement (best for katakana name tags) and the isolated
 // bright ink on white (best for the bold Latin fighter captions).
+//
+// A third variant keeps only the white text (near-white and unsaturated)
+// as black on white: on the narrow 5-8 player panels the big grey series
+// logo behind a caption and the panel's pattern behind a tag pass the
+// brightness threshold of the second variant and garble the reading
+// (SORA read as "◎RA").
 func Variants(crop image.Image) []image.Image {
 	up := Upscale(crop, 4)
 	out := []image.Image{up}
 	if iso, ok := IsolateBright(up, 180, 12); ok {
 		out = append(out, iso)
+	}
+	if wt, ok := isolate(WhiteText(up), 16); ok {
+		out = append(out, wt)
+	}
+	return out
+}
+
+// WhiteText is black where img is white text (every channel above 185 and
+// within 45 of each other), white elsewhere.
+func WhiteText(img image.Image) *image.Gray {
+	b := img.Bounds()
+	out := image.NewGray(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := 0; y < b.Dy(); y++ {
+		for x := 0; x < b.Dx(); x++ {
+			r, g, bl, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			r8, g8, b8 := int(r>>8), int(g>>8), int(bl>>8)
+			mx, mn := max(r8, max(g8, b8)), min(r8, min(g8, b8))
+			v := uint8(255)
+			if mn > 185 && mx-mn < 45 {
+				v = 0
+			}
+			out.Pix[out.PixOffset(x, y)] = v
+		}
 	}
 	return out
 }
@@ -489,6 +518,13 @@ type windowsEngine struct {
 func (w *windowsEngine) Name() string { return "windows" }
 
 func (w *windowsEngine) Recognize(img image.Image) (string, error) {
+	return w.RecognizeLang(img, w.lang)
+}
+
+// RecognizeLang reads img with the OCR model of lang ("en" for the fighter
+// captions). When that model is not installed Windows falls back to the
+// user's languages, so asking for it is always safe.
+func (w *windowsEngine) RecognizeLang(img image.Image, lang string) (string, error) {
 	w.once.Do(func() {
 		dir := filepath.Join(os.TempDir(), "smashrate")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -510,7 +546,7 @@ func (w *windowsEngine) Recognize(img image.Image) (string, error) {
 	defer cancel()
 	// powershell.exe (5.1) has the WinRT projection; pwsh 7 does not.
 	text, err := runCapture(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-File", w.script, "-Path", path, "-Lang", w.lang)
+		"-File", w.script, "-Path", path, "-Lang", lang)
 	if err != nil {
 		return "", err
 	}
@@ -544,4 +580,9 @@ func (c *commandEngine) Recognize(img image.Image) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 	return runCapture(ctx, parts[0], parts[1:]...)
+}
+
+// LangEngine is an Engine that can be told which language to read.
+type LangEngine interface {
+	RecognizeLang(img image.Image, lang string) (string, error)
 }

@@ -122,6 +122,19 @@ func NewWatcher(cfg config.VisionConfig, c *core.Core, dataDir string, notify fu
 // SetOCR replaces the OCR engine (tests, or a custom engine).
 func (w *Watcher) SetOCR(e ocr.Engine) { w.ocr = e }
 
+// recognizeCaption reads a fighter caption: English text, so the English
+// OCR model is asked for when the engine supports languages.
+func (w *Watcher) recognizeCaption(crop image.Image) string {
+	if le, ok := w.ocr.(ocr.LangEngine); ok {
+		text, err := le.RecognizeLang(crop, "en")
+		if err == nil {
+			return text
+		}
+		log.Printf("vision: ocr (en): %v", err)
+	}
+	return w.recognize(crop)
+}
+
 // recognize runs OCR on a crop; "" when OCR is disabled or fails.
 func (w *Watcher) recognize(crop image.Image) string {
 	if w.ocr == nil {
@@ -146,7 +159,7 @@ func (w *Watcher) learn(kind, label string, hash uint64) {
 // the player when the text matches nobody. The tag's hash is stored so the
 // next appearance is matched without OCR. placeholder is true for default
 // labels (プレイヤー1, コンピューター2, P1, CPU), which are remembered too.
-func (w *Watcher) readTag(crops []image.Image, hashes []uint64) (name string, created, placeholder bool) {
+func (w *Watcher) readTag(crops []image.Image, hashes []uint64, need int) (name string, created, placeholder bool) {
 	if w.ocr == nil || len(crops) == 0 {
 		return "", false, false
 	}
@@ -163,12 +176,15 @@ func (w *Watcher) readTag(crops []image.Image, hashes []uint64) (name string, cr
 	for _, p := range players {
 		names = append(names, p.Name)
 	}
-	// Every frame, smooth enlargement first (best for kana), then the
-	// isolated ink; the first reading that is a placeholder or matches a
-	// known player wins. Otherwise the longest reading becomes a new player:
-	// a sparkle crossing a glyph on one frame loses that glyph, never adds
-	// one.
-	first := ""
+	// Every frame and every variant: the first reading that is a
+	// placeholder or matches a known player wins. A new player is only
+	// registered from a reading that came out the same at least need times
+	// (2 on the narrow panels: two frames, or two variants of one frame):
+	// small tags there read differently each time when OCR is guessing (つゆだく as
+	// "っゆ1こ" and "つゆに、"), and a guess must not become a player. Among
+	// agreeing readings the longest wins: a sparkle crossing a glyph loses
+	// it, never adds one.
+	seen := map[string]int{}
 	for _, crop := range crops {
 		for _, v := range ocr.Variants(crop) {
 			clean := ocr.NormalizeName(w.recognize(v))
@@ -183,13 +199,16 @@ func (w *Watcher) readTag(crops []image.Image, hashes []uint64) (name string, cr
 				learnAll(m)
 				return m, false, false
 			}
-			if len([]rune(clean)) > len([]rune(first)) {
-				first = clean
-			}
-			break // one reading per frame is enough to compare lengths
+			seen[clean]++
 		}
 	}
-	if first == "" || !ocr.PlausibleName(first) {
+	first := ""
+	for s, n := range seen {
+		if n >= need && ocr.PlausibleName(s) && (len([]rune(s)) > len([]rune(first)) || (len([]rune(s)) == len([]rune(first)) && s < first)) {
+			first = s
+		}
+	}
+	if first == "" {
 		return "", false, false
 	}
 	p, err := w.core.GetOrCreatePlayer(first)
@@ -210,7 +229,7 @@ func (w *Watcher) readChar(crop image.Image, hash uint64) string {
 	}
 	vs := ocr.Variants(crop)
 	for i := len(vs) - 1; i >= 0; i-- {
-		if key, ok := ocr.MatchCharacter(w.recognize(vs[i])); ok {
+		if key, ok := ocr.MatchCharacter(w.recognizeCaption(vs[i])); ok {
 			w.learn(KindChar, key, hash)
 			return key
 		}
@@ -644,7 +663,11 @@ func (w *Watcher) handle(img image.Image, samples []image.Image, r *Reading) {
 		}
 		if name == "" && !placeholder {
 			var created bool
-			name, created, placeholder = w.readTag(tagCrops, hashes)
+			need := 1 // wide panels: OCR reads a tag reliably
+			if layout.Slots[i].Rank.Y >= 0.1 {
+				need = 2 // narrow panels (5-8 players): small text, readings must agree
+			}
+			name, created, placeholder = w.readTag(tagCrops, hashes, need)
 			if created {
 				newcomers = append(newcomers, name)
 			}
