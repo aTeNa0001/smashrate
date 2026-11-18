@@ -45,7 +45,7 @@ func NormalizeName(text string) string {
 	return first
 }
 
-var placeholderTag = regexp.MustCompile(`(?i)^(p|player|cpu|com)[ -]?[1-8]?$`)
+var placeholderTag = regexp.MustCompile(`(?i)^(p|player|cpu|cp|com)[ -]?[1-8]?$`)
 
 // placeholderWords are the game's Japanese default tags; OCR tends to
 // misread a kana or two (コンにユーター), so they are matched fuzzily.

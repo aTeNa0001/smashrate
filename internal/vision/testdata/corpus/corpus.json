@@ -104,5 +104,21 @@
       {"port": 1, "rank": 2}, {"port": 2, "rank": 1}, {"port": 3, "rank": 5}, {"port": 4, "rank": 4},
       {"port": 5, "rank": 7}, {"port": 6, "rank": 6}, {"port": 7, "rank": 8}, {"port": 8, "rank": 3}
     ]
+  },
+  {
+    "file": "results-8p-lucina-cpus.jpg",
+    "note": "first 8-player results page seen at 1080p (2026-11-18 20:55), one human (1P) and seven CPUs. As on the 8-player detail page, the narrow tag is 8 bits from the wide-panel template: OCR learns it once for this layout",
+    "name_by_hash_optional": true,
+    "players": 8,
+    "slots": [
+      {"port": 1, "name": "はるか", "char": "lucina", "rank": 8},
+      {"port": 2, "name": "", "cpu": true, "char": "sephiroth", "rank": 4},
+      {"port": 3, "name": "", "cpu": true, "char": "sora", "rank": 6},
+      {"port": 4, "name": "", "cpu": true, "char": "wii_fit_trainer", "rank": 3},
+      {"port": 5, "name": "", "cpu": true, "char": "donkey_kong", "rank": 7},
+      {"port": 6, "name": "", "cpu": true, "char": "little_mac", "rank": 2},
+      {"port": 7, "name": "", "cpu": true, "char": "mario", "rank": 5},
+      {"port": 8, "name": "", "cpu": true, "char": "piranha_plant", "rank": 1}
+    ]
   }
 ]

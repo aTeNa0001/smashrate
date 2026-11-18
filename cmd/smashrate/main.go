@@ -119,6 +119,12 @@ func main() {
 		err = deleteCmd(c, args)
 	case "fix":
 		err = fixCmd(c, args)
+	case "remove-player":
+		if len(args) != 1 {
+			err = errors.New("usage: remove-player <name>   (only a player with no matches, e.g. a misread name tag)")
+		} else {
+			err = c.RemovePlayer(args[0])
+		}
 	case "rename":
 		if len(args) != 2 {
 			err = errors.New("usage: rename <old> <new>")
@@ -453,6 +459,7 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 	from := fs.String("from", "", "relabel: the current label, e.g. results:8")
 	to := fs.String("to", "", "relabel: the new label, e.g. detail:8")
 	since := fs.String("since", "", "relabel: only templates learned at or after this time (RFC3339)")
+	kind := fs.String("kind", "", "relabel: template kind to relabel (default: the screen and band kinds); \"name\" fixes a name tag learned under the wrong player")
 	fs.Parse(rest)
 
 	switch sub {
@@ -597,7 +604,11 @@ func visionCmd(cfg config.Config, c *core.Core, args []string) error {
 				return err
 			}
 		}
-		n, err := c.RelabelTemplates([]string{vision.KindScreen, vision.KindBand}, *from, *to, t)
+		kinds := []string{vision.KindScreen, vision.KindBand}
+		if *kind != "" {
+			kinds = []string{*kind}
+		}
+		n, err := c.RelabelTemplates(kinds, *from, *to, t)
 		if err != nil {
 			return err
 		}

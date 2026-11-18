@@ -81,7 +81,7 @@ func TestMatchCharacterAndRank(t *testing.T) {
 }
 
 func TestIsPlaceholder(t *testing.T) {
-	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", "コ ン に ユ ー タ ー 2", "ン ヒ ュ ー タ ー 4", "フ レ イ ヤ ー 1", "ン に ユ ー タ -", "心 ュ ー タ -", "1 ン に ユ ー タ ー 2", ""} {
+	for _, s := range []string{"P1", "p 2", "Player 3", "PLAYER4", "CPU", "CP", "cp 3", "COM 1", "プレイヤー1", "コンピューター2", "コ ン ピ ュ ー タ ー 3", "コ ン に ユ ー タ ー 2", "ン ヒ ュ ー タ ー 4", "フ レ イ ヤ ー 1", "ン に ユ ー タ -", "心 ュ ー タ -", "1 ン に ユ ー タ ー 2", ""} {
 		if !IsPlaceholder(s) {
 			t.Fatalf("%q should be a placeholder", s)
 		}

@@ -83,3 +83,25 @@ func TestSetEvidence(t *testing.T) {
 		t.Fatal("unknown match must be an error")
 	}
 }
+
+func TestRemovePlayerOnlyWithoutMatches(t *testing.T) {
+	c, _ := Open(":memory:")
+	defer c.Close()
+	if _, err := c.GetOrCreatePlayer("CP"); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.AddTemplate("name", "CP", 42)
+	if err := c.RemovePlayer("CP"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.PlayerByName("CP"); err == nil {
+		t.Fatal("player still there")
+	}
+	if ts, _ := c.Templates("name"); len(ts) != 0 {
+		t.Fatalf("its tag templates must go too: %+v", ts)
+	}
+	_, _ = c.RecordMatch(MatchInput{Entries: []EntryInput{{Player: "A", Team: 1, Rank: 1}, {Player: "B", Team: 2, Rank: 2}}})
+	if err := c.RemovePlayer("A"); err == nil {
+		t.Fatal("a player with matches must not be removed")
+	}
+}

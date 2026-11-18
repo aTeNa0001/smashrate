@@ -1271,3 +1271,34 @@ func (c *Core) RelabelTemplates(kinds []string, from, to string, since time.Time
 	}
 	return int(total), nil
 }
+
+// RemovePlayer deletes a player who has no matches (a name created from a
+// misread tag) together with the name-tag templates learned for them.
+func (c *Core) RemovePlayer(name string) error {
+	p, err := c.PlayerByName(name)
+	if err != nil {
+		return err
+	}
+	var n int
+	if err := c.db.QueryRow(`SELECT COUNT(*) FROM entries WHERE player_id = ?`, p.ID).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return fmt.Errorf("%s has %d matches; use merge or rename instead", p.Name, n)
+	}
+	tx, err := c.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM vision_templates WHERE kind = 'name' AND label = ?`, p.Name); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM rating_states WHERE player_id = ?`, p.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM players WHERE id = ?`, p.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
