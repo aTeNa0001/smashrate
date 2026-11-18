@@ -158,3 +158,40 @@ func Replay(det *Detector, dir string) (*ReplayResult, error) {
 	}
 	return res, nil
 }
+
+// The ring buffer keeps one frame a second of whatever the board shows,
+// the newest ringKeep of them, under data/ring. A results screen that the
+// detector does not recognise at all (a layout never seen at this
+// resolution) leaves no burst, but it is in here for the next two and a
+// half minutes, so it can be fetched and the layout taught from it
+// without anyone having to bring the screen up again.
+const (
+	ringEvery = time.Second
+	ringKeep  = 900 // 15 minutes
+)
+
+func (w *Watcher) ring(img image.Image, now time.Time) {
+	if w.dataDir == "" || now.Sub(w.lastRing) < ringEvery {
+		return
+	}
+	w.lastRing = now
+	dir := filepath.Join(w.dataDir, "ring")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	f, err := os.Create(filepath.Join(dir, now.Format("20060102-150405")+".jpg"))
+	if err != nil {
+		return
+	}
+	_ = jpeg.Encode(f, toRGBA(img), &jpeg.Options{Quality: 80})
+	f.Close()
+	w.ringN++
+	if w.ringN%20 == 0 {
+		names, _ := filepath.Glob(filepath.Join(dir, "*.jpg"))
+		sort.Strings(names)
+		for len(names) > ringKeep {
+			_ = os.Remove(names[0])
+			names = names[1:]
+		}
+	}
+}

@@ -31,12 +31,14 @@ type pendingCrop struct {
 
 // Watcher turns frames into recorded matches.
 type Watcher struct {
-	cfg     config.VisionConfig
-	core    *core.Core
-	det     *Detector
-	dataDir string
-	notify  func(string)
-	ocr     ocr.Engine // nil = disabled
+	cfg      config.VisionConfig
+	core     *core.Core
+	det      *Detector
+	dataDir  string
+	lastRing time.Time // when the ring buffer last took a frame (see bursts.go)
+	ringN    int
+	notify   func(string)
+	ocr      ocr.Engine // nil = disabled
 
 	mu        sync.Mutex
 	pending   map[string]pendingCrop
@@ -474,6 +476,7 @@ func (w *Watcher) Process(img image.Image) {
 	w.stats.Frames++
 	w.stats.LastFrameAt = now
 	w.mu.Unlock()
+	w.ring(img, now)
 	if w.lastChange.IsZero() || Hamming(h, w.lastHash) > changedBits {
 		w.lastHash, w.lastChange = h, now
 	}
