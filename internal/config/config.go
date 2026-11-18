@@ -213,7 +213,10 @@ func defaultLayouts() []Layout {
 				// name tag on the same row as the "1P"/"CP" badge
 				s.Char = Region{X: x + w*0.03, Y: 0.045, W: w * 0.55, H: 0.11}
 				s.Name = Region{X: x + w*0.14, Y: 0.165, W: w * 0.53, H: 0.075}
-				s.Rank = Region{X: x + w*0.68, Y: 0.02, W: w * 0.32, H: 0.16}
+				// the numeral is taller for the winner (it reaches from the
+				// very top of the panel to below the badge row); a region
+				// that clips it is not recognised as a digit at all
+				s.Rank = Region{X: x + w*0.66, Y: 0, W: w * 0.34, H: 0.22}
 			} else {
 				// narrow panels: caption spans the panel (the icon sits behind
 				// it), the badge is above the tag, the numeral is on the portrait

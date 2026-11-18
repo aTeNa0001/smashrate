@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -623,6 +624,11 @@ func (w *Watcher) handle(img image.Image, r *Reading) {
 		if rank == 0 {
 			id := w.stash(KindRank, s.RankHash, img, Rect(b, slot.Rank))
 			unknown = append(unknown, fmt.Sprintf("P%d 順位 → %s", s.Port, id))
+		}
+		if s.Inferred && s.RankHash != 0 {
+			// the numeral was unread but its placement followed from the
+			// others: remember the shape so it is read directly next time
+			w.learn(KindRank, strconv.Itoa(rank), s.RankHash)
 		}
 		in.Entries = append(in.Entries, core.EntryInput{Player: name, Port: s.Port, Team: s.Port, Rank: rank, Character: char})
 	}

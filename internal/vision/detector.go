@@ -45,7 +45,8 @@ type SlotReading struct {
 	Char        string // character key, "" if unknown
 	CharDist    int
 	CharHash    uint64
-	Rank        int // 0 if unknown
+	Rank        int  // 0 if unknown
+	Inferred    bool // the numeral was unread and Rank is the one placement left over
 	RankDist    int
 	RankHash    uint64
 }
@@ -233,11 +234,13 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			continue
 		}
 		r := &Reading{Players: layout.Players, Team: layout.Mode == "team", Layout: layout}
-		for i, slot := range layout.Slots {
+		// The placement numerals first: each is matched by its shape
+		// signature (independent of the column and background), and knowing
+		// who won tells where that panel's text sits. One unread numeral is
+		// inferred from the others before the text is read, so the winner's
+		// shifted regions are used even when the gold "1" itself was unread.
+		for _, slot := range layout.Slots {
 			sr := SlotReading{Port: slot.Port}
-			// The placement numeral first: it is matched by its shape
-			// signature (independent of the column and background), and
-			// knowing who won tells where that panel's text sits.
 			if sig, ok := ocr.GlyphSignature(Crop(img, Rect(b, slot.Rank))); ok {
 				sr.RankHash = sig
 				if lbl, dist, ok := d.classifyRank(sig); ok {
@@ -249,6 +252,11 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			} else {
 				sr.RankDist = 64
 			}
+			r.Slots = append(r.Slots, sr)
+		}
+		fillMissingRank(r)
+		for i := range r.Slots {
+			sr := &r.Slots[i]
 			sr.Winner = sr.Rank == 1
 			sr.CharRegion = layout.CharRegion(i, sr.Winner)
 			sr.NameRegion = layout.NameRegion(i, sr.Winner)
@@ -270,7 +278,6 @@ func (d *Detector) Detect(img image.Image) (*Reading, bool) {
 			} else {
 				sr.CharDist = dist
 			}
-			r.Slots = append(r.Slots, sr)
 		}
 		return r, true
 	}
@@ -368,4 +375,39 @@ func Teach(c *core.Core, cfg config.VisionConfig, img image.Image, players int, 
 		}
 	}
 	return nil
+}
+
+// fillMissingRank infers one unread placement numeral: in a free-for-all
+// the placements are 1..N, so when every other slot reads a distinct
+// placement the remaining one is the number left over. (A team battle
+// shares placements between teammates; then nothing can be inferred and
+// the slot stays unknown.) The 1st-place numeral is the one most often
+// unread, being gold, larger and partly behind the laurels, and a 1v1
+// screen was going unrecorded because of it.
+func fillMissingRank(r *Reading) {
+	missing := -1
+	seen := map[int]bool{}
+	for i, s := range r.Slots {
+		if s.Rank == 0 {
+			if missing >= 0 {
+				return // two unknowns: nothing to infer
+			}
+			missing = i
+			continue
+		}
+		if seen[s.Rank] || s.Rank > len(r.Slots) {
+			return // a shared placement (teams) or a misread: do not guess
+		}
+		seen[s.Rank] = true
+	}
+	if missing < 0 {
+		return
+	}
+	for n := 1; n <= len(r.Slots); n++ {
+		if !seen[n] {
+			r.Slots[missing].Rank = n
+			r.Slots[missing].Inferred = true
+			return
+		}
+	}
 }
